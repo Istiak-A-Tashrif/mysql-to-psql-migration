@@ -35,6 +35,7 @@ import sys
 import time
 from datetime import datetime
 import json
+from collections import OrderedDict
 
 class MySQLToPrismaConverter:
     def __init__(self):
@@ -46,54 +47,75 @@ class MySQLToPrismaConverter:
         self.postgres_password = "postgres"
         
         # Prisma-compatible type mappings (order matters - more specific first)
-        self.type_mappings = {
+        self.type_mappings = OrderedDict([
             # Integer types - specific patterns first
-            r'\bint\(\d+\)\s+auto_increment\b': 'SERIAL PRIMARY KEY',
-            r'\bbigint\(\d+\)\s+auto_increment\b': 'BIGSERIAL PRIMARY KEY',
-            r'\btinyint\(1\)\b': 'BOOLEAN',  # MySQL boolean equivalent
-            r'\btinyint\(\d+\)\b': 'SMALLINT',
-            r'\bsmallint\(\d+\)\b': 'SMALLINT',
-            r'\bmediumint\(\d+\)\b': 'INTEGER',
-            r'\bint\(\d+\)\b': 'INTEGER',
-            r'\bbigint\(\d+\)\b': 'BIGINT',
-            r'\bint\s+unsigned\b': 'INTEGER',
-            r'\bbigint\s+unsigned\b': 'BIGINT',
-            r'\btinyint\b(?!\()': 'SMALLINT',  # tinyint without parentheses
-            r'\bint\b(?!\()': 'INTEGER',  # int without parentheses
+            (r'\bint\(\d+\)\s+auto_increment\b', 'SERIAL PRIMARY KEY'),
+            (r'\bbigint\(\d+\)\s+auto_increment\b', 'BIGSERIAL PRIMARY KEY'),
+            (r'tinyint\(1\)', 'BOOLEAN'),  # MySQL boolean equivalent - no word boundary needed
+            (r'tinyint\(\d+\)', 'SMALLINT'),
+            (r'smallint\(\d+\)', 'SMALLINT'),
+            (r'mediumint\(\d+\)', 'INTEGER'),
+            (r'int\(\d+\)', 'INTEGER'),
+            (r'bigint\(\d+\)', 'BIGINT'),
+            (r'\bint\s+unsigned\b', 'INTEGER'),
+            (r'\bbigint\s+unsigned\b', 'BIGINT'),
+            (r'\btinyint\b(?!\()', 'SMALLINT'),  # Generic tinyint without parentheses
+            (r'\bint(?!\()', 'INTEGER'),  # int without parentheses - with word boundary
             
             # String types
-            r'varchar\((\d+)\)': r'VARCHAR(\1)',
-            r'char\((\d+)\)': r'CHAR(\1)',
-            r'text': 'TEXT',
-            r'longtext': 'TEXT',
-            r'mediumtext': 'TEXT',
-            r'tinytext': 'TEXT',
+            (r'varchar\((\d+)\)', r'VARCHAR(\1)'),
+            (r'char\((\d+)\)', r'CHAR(\1)'),
+            (r'text', 'TEXT'),
+            (r'longtext', 'TEXT'),
+            (r'mediumtext', 'TEXT'),
+            (r'tinytext', 'TEXT'),
             
             # Date/Time types (Prisma compatible) - be specific to avoid column name conflicts
-            r'\bdatetime\(\d+\)\b': 'TIMESTAMP(3)',  # Prisma prefers TIMESTAMP(3)
-            r'\bdatetime\b': 'TIMESTAMP',
-            r'\btimestamp\b': 'TIMESTAMP',
-            r'\bdate\b(?=\s|,|\)|\n)': 'DATE',  # Only match date as a type, not in column names
-            r'\btime\b(?=\s|,|\)|\n)': 'TIME',  # Only match time as a type, not in column names
+            (r'\bdatetime\(\d+\)\b', 'TIMESTAMP(3)'),  # Prisma prefers TIMESTAMP(3)
+            (r'\bdatetime\b', 'TIMESTAMP'),
+            (r'\btimestamp\b', 'TIMESTAMP'),
+            (r'\bdate\b(?=\s|,|\)|\n)', 'DATE'),  # Only match date as a type, not in column names
+            (r'\btime\b(?=\s|,|\)|\n)', 'TIME'),  # Only match time as a type, not in column names
             
             # Decimal types
-            r'decimal\((\d+),(\d+)\)': r'DECIMAL(\1,\2)',
-            r'numeric\((\d+),(\d+)\)': r'DECIMAL(\1,\2)',
-            r'double': 'DOUBLE PRECISION',
-            r'float': 'REAL',
+            (r'decimal\((\d+),(\d+)\)', r'DECIMAL(\1,\2)'),
+            (r'numeric\((\d+),(\d+)\)', r'DECIMAL(\1,\2)'),
+            (r'double', 'DOUBLE PRECISION'),
+            (r'float', 'REAL'),
             
             # Binary types
-            r'blob': 'BYTEA',
-            r'longblob': 'BYTEA',
-            r'mediumblob': 'BYTEA',
-            r'tinyblob': 'BYTEA',
-            r'binary\((\d+)\)': r'BYTEA',
-            r'varbinary\((\d+)\)': r'BYTEA',
+            (r'blob', 'BYTEA'),
+            (r'longblob', 'BYTEA'),
+            (r'mediumblob', 'BYTEA'),
+            (r'tinyblob', 'BYTEA'),
+            (r'binary\((\d+)\)', r'BYTEA'),
+            (r'varbinary\((\d+)\)', r'BYTEA'),
             
             # Special types
-            r'enum\([^)]+\)': 'VARCHAR(50)',  # Prisma doesn't support native enums in schema
-            r'set\([^)]+\)': 'TEXT',
-            r'json': 'JSONB',  # PostgreSQL native JSON
+            (r'enum\([^)]+\)', 'VARCHAR(50)'),  # Prisma doesn't support native enums in schema
+            (r'set\([^)]+\)', 'TEXT'),
+            (r'json', 'JSONB'),  # PostgreSQL native JSON
+        ])
+        
+        # Reserved words that need quoting or renaming in PostgreSQL
+        self.reserved_words = {
+            'user': 'users',
+            'group': 'groups', 
+            'column': 'columns',
+            'to': 'to_user',
+            'from': 'from_user',
+            'order': 'order_num',
+            'table': 'table_name',
+            'select': 'select_table',
+            'where': 'where_table',
+            'join': 'join_table',
+            'key': 'key_table',
+            'index': 'index_table',
+            'primary': 'primary_table',
+            'foreign': 'foreign_table',
+            'check': 'check_table',
+            'constraint': 'constraint_table',
+            'references': 'references_table'
         }
         
         self.stats = {
@@ -303,132 +325,53 @@ networks:
         self.log(f"Found {len(tables)} tables: {', '.join(tables[:5])}{'...' if len(tables) > 5 else ''}")
         return tables
     
-    def convert_mysql_ddl_to_postgres(self, mysql_ddl, table_name):
-        """Convert MySQL CREATE TABLE to PostgreSQL with Prisma compatibility"""
+    def get_mysql_table_structure(self, table_name):
+        """Get CREATE TABLE statement from MySQL using SHOW CREATE TABLE"""
+        self.log(f"Getting table structure for {table_name} from MySQL...")
         
-        # Extract CREATE TABLE statement
-        create_match = re.search(r'CREATE TABLE.*?;', mysql_ddl, re.DOTALL | re.IGNORECASE)
-        if not create_match:
-            # Fallback simple table
-            return f'CREATE TABLE IF NOT EXISTS "{table_name}" (id SERIAL PRIMARY KEY);'
+        # Use the same format that works in our test
+        cmd = f'docker exec {self.mysql_container} mysql -u root -prootpass -D {self.mysql_db} -e "SHOW CREATE TABLE `{table_name}`\\G" --skip-column-names'
+        result = self.run_command(cmd)
         
-        ddl = create_match.group(0)
+        if not result or result.returncode != 0:
+            self.log(f"Failed to get table structure: {result.stderr if result else 'No result'}", "ERROR")
+            return None
         
-        # First, apply type conversions
-        for mysql_pattern, postgres_type in self.type_mappings.items():
-            ddl = re.sub(mysql_pattern, postgres_type, ddl, flags=re.IGNORECASE)
+        mysql_ddl = result.stdout.strip()
         
-        # Remove MySQL-specific column attributes but be more careful
-        ddl = re.sub(r'CHARACTER SET \w+', '', ddl, flags=re.IGNORECASE)
-        ddl = re.sub(r'COLLATE \w+', '', ddl, flags=re.IGNORECASE)
-        ddl = re.sub(r'AUTO_INCREMENT', '', ddl, flags=re.IGNORECASE)
-        ddl = re.sub(r'ON UPDATE CURRENT_TIMESTAMP\(\d+\)', '', ddl, flags=re.IGNORECASE)
-        ddl = re.sub(r'DEFAULT CURRENT_TIMESTAMP\(\d+\)', 'DEFAULT CURRENT_TIMESTAMP', ddl, flags=re.IGNORECASE)
-        
-        # Remove MySQL table engine and other table-level options
-        ddl = re.sub(r'\)\s*ENGINE=.*?;', ');', ddl, flags=re.IGNORECASE | re.DOTALL)
-        
-        # Remove constraints and indexes - but do it more carefully
-        lines = ddl.split('\n')
-        filtered_lines = []
-        in_create_table = False
-        primary_key_column = None
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            if 'CREATE TABLE' in line.upper():
-                in_create_table = True
-                # Fix table name for PostgreSQL
-                line = re.sub(f'CREATE TABLE `?{table_name}`?', f'CREATE TABLE IF NOT EXISTS "{table_name}"', line, flags=re.IGNORECASE)
-                # Convert backticks to quotes
-                line = re.sub(r'`([^`]+)`', r'"\1"', line)
-                filtered_lines.append(line)
-            elif in_create_table:
-                # Skip constraint, key, and index lines
-                upper_line = line.upper()
-                if any(keyword in upper_line for keyword in ['CONSTRAINT', 'FOREIGN KEY', 'REFERENCES', 'KEY ', 'INDEX ', 'UNIQUE KEY']):
-                    continue
-                
-                # Check for PRIMARY KEY column
-                if 'PRIMARY KEY' in upper_line:
-                    # Extract column name from PRIMARY KEY line
-                    pk_match = re.search(r'PRIMARY KEY \(`?([^`\)]+)`?\)', line, re.IGNORECASE)
-                    if pk_match:
-                        primary_key_column = pk_match.group(1)
-                    continue
-                
-                # Convert backticks to quotes for column names
-                line = re.sub(r'`([^`]+)`', r'"\1"', line)
-                
-                # Check if this is the closing parenthesis
-                if line.startswith(')'):
-                    # Add PRIMARY KEY constraint if we found one
-                    if primary_key_column:
-                        filtered_lines.append(f'  PRIMARY KEY ("{primary_key_column}")')
-                    filtered_lines.append(');')
-                    break
-                else:
-                    # Clean up trailing commas before adding
-                    if line.endswith(','):
-                        filtered_lines.append('  ' + line)
-                    else:
-                        filtered_lines.append('  ' + line + ',')
-        
-        # Join lines and clean up
-        ddl = '\n'.join(filtered_lines)
-        
-        # Final cleanup - remove any trailing commas before closing parenthesis or PRIMARY KEY
-        ddl = re.sub(r',\s*\n\s*PRIMARY KEY', '\n  PRIMARY KEY', ddl)
-        ddl = re.sub(r',\s*\n\s*\)', '\n)', ddl)
-        ddl = re.sub(r',\s*,', ',', ddl)  # Remove double commas
-        
-        # Ensure statement ends with semicolon
-        if not ddl.endswith(';'):
-            ddl += ';'
-        
-        return ddl
-    
-    def create_postgres_schema(self, tables):
-        """Create PostgreSQL tables from MySQL schema"""
-        self.log("Creating PostgreSQL schema...")
-        
-        for table in tables:
-            self.log(f"Creating table: {table}")
+        # Extract the CREATE TABLE part from the output
+        if 'Create Table:' in mysql_ddl:
+            ddl_start = mysql_ddl.find('Create Table:') + len('Create Table:')
+            mysql_ddl = mysql_ddl[ddl_start:].strip()
             
-            # Get MySQL table structure
-            cmd = f"docker exec {self.mysql_container} mysqldump -u root -prootpass --no-data --single-transaction {self.mysql_db} {table}"
-            result = self.run_command(cmd)
+        if mysql_ddl and 'CREATE TABLE' in mysql_ddl:
+            self.log(f"Got MySQL CREATE TABLE statement for {table_name}")
+            return mysql_ddl
+        
+        self.log(f"Could not find CREATE TABLE statement for {table_name}", "ERROR")
+        return None
+
+    def create_postgresql_table_improved(self, table_name, mysql_ddl):
+        """Create PostgreSQL table with improved DDL handling"""
+        self.log(f"Creating PostgreSQL table: {table_name}")
+        
+        # Use dynamic DDL conversion for ALL tables - no hardcoded schemas
+        clean_ddl = self.convert_mysql_ddl_to_postgres(mysql_ddl, table_name)
+        
+        # Write DDL to file and execute
+        ddl_file = f"create_{table_name.lower()}.sql"
+        with open(ddl_file, "w", encoding="utf-8") as f:
+            f.write(clean_ddl + ";")
+        
+        # Copy and execute DDL
+        copy_cmd = f"docker cp {ddl_file} {self.postgres_container}:/tmp/{ddl_file}"
+        copy_result = self.run_command(copy_cmd)
+        
+        if copy_result and copy_result.returncode == 0:
+            exec_cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -f /tmp/{ddl_file}'
+            result = self.run_command(exec_cmd)
             
-            if not result or result.returncode != 0:
-                self.log(f"Failed to get structure for table: {table}", "ERROR")
-                continue
-            
-            # Convert DDL
-            postgres_ddl = self.convert_mysql_ddl_to_postgres(result.stdout, table)
-            self.log(f"Generated DDL for {table}: {postgres_ddl[:100]}...")
-            
-            # Create table in PostgreSQL using a file to avoid shell escaping issues
-            ddl_file = f"temp_{table}_ddl.sql"
-            with open(ddl_file, "w", encoding="utf-8") as f:
-                f.write(postgres_ddl)
-            
-            # Copy DDL file to container and execute
-            copy_cmd = f"docker cp {ddl_file} {self.postgres_container}:/tmp/{ddl_file}"
-            copy_result = self.run_command(copy_cmd)
-            
-            if copy_result and copy_result.returncode == 0:
-                cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -f /tmp/{ddl_file}'
-                result = self.run_command(cmd)
-                if result:
-                    self.log(f"DDL execution result for {table}: return_code={result.returncode}, stdout={result.stdout[:200]}, stderr={result.stderr[:200]}")
-            else:
-                result = None
-                self.log(f"Failed to copy DDL file for table: {table}", "ERROR")
-            
-            # Clean up temp file
+            # Clean up
             try:
                 os.remove(ddl_file)
             except:
@@ -436,150 +379,559 @@ networks:
             self.run_command(f"docker exec {self.postgres_container} rm /tmp/{ddl_file}")
             
             if result and result.returncode == 0:
-                self.log(f"[OK] Created table: {table}")
-                self.stats['tables_created'] += 1
+                # Verify table was actually created by checking if it exists
+                # Check for both quoted and unquoted table names since DDL conversion may quote reserved words
+                check_cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -t -c "SELECT 1 FROM information_schema.tables WHERE table_schema = \'public\' AND (table_name = \'{table_name}\' OR table_name = \'{table_name.lower()}\');"'
+                check_result = self.run_command(check_cmd)
+                
+                if check_result and check_result.returncode == 0 and check_result.stdout.strip():
+                    self.log(f"Created table: {table_name}")
+                    return True
+                else:
+                    self.log(f"❌ Table creation reported success but table {table_name} not found in database", "ERROR")
+                    # Show the DDL that failed for debugging
+                    self.log(f"DDL attempted: {clean_ddl[:300]}...", "ERROR")
+                    return False
             else:
-                self.log(f"[ERROR] Failed to create table: {table}", "ERROR")
-                self.stats['errors'].append(f"Table creation failed: {table}")
-    
-    def export_and_import_data(self, table):
-        """Export data from MySQL and import to PostgreSQL"""
-        
-        # Export data from MySQL as TSV with headers
-        cmd = f'docker exec {self.mysql_container} mysql -u root -prootpass -D {self.mysql_db} -e "SELECT * FROM `{table}`;" --batch --raw --default-character-set=utf8mb4'
-        result = self.run_command(cmd)
-        
-        if not result or result.returncode != 0:
-            self.log(f"Failed to export data from table: {table}", "ERROR")
+                self.log(f"Failed to create table: {table_name}", "ERROR")
+                if result and result.stderr:
+                    self.log(f"PostgreSQL error: {result.stderr[:500]}", "ERROR")
+                if result and result.stdout:
+                    self.log(f"PostgreSQL output: {result.stdout[:500]}", "ERROR")
+                # Show the DDL that failed for debugging
+                self.log(f"DDL attempted: {clean_ddl[:300]}...", "ERROR")
+                return False
+        else:
+            self.log(f"❌ Failed to copy DDL file for table: {table_name}", "ERROR")
             return False
+    
+    def convert_mysql_ddl_to_postgres(self, mysql_ddl, table_name):
+        """Convert MySQL DDL to PostgreSQL DDL with improved reliability"""
+        self.log(f"Converting MySQL DDL to PostgreSQL for {table_name}...")
         
-        # Check if table has data
-        if not result.stdout or not result.stdout.strip():
-            self.log(f"Table {table} is empty")
-            return True
+        # PostgreSQL reserved words that need to be quoted
+        pg_reserved_words = {
+            'column', 'group', 'user', 'order', 'table', 'index', 'constraint',
+            'primary', 'foreign', 'references', 'key', 'unique', 'check',
+            'default', 'null', 'not', 'and', 'or', 'in', 'as', 'on', 'from',
+            'where', 'select', 'insert', 'update', 'delete', 'create', 'drop',
+            'alter', 'grant', 'revoke', 'commit', 'rollback', 'transaction'
+        }
         
-        lines = result.stdout.strip().split('\n')
-        if len(lines) <= 1:  # Only header or empty
-            self.log(f"Table {table} is empty")
-            return True
+        # Start with the original DDL
+        postgres_ddl = mysql_ddl
         
-        # Clean and process the data
-        cleaned_lines = []
+        # Convert table name and handle reserved words
+        table_name_lower = table_name.lower()
+        if table_name_lower in pg_reserved_words:
+            # Quote reserved table names
+            postgres_ddl = re.sub(
+                r'CREATE TABLE `([^`]+)`',
+                rf'CREATE TABLE "{table_name}"',
+                postgres_ddl,
+                flags=re.IGNORECASE
+            )
+        else:
+            # Remove backticks for non-reserved table names
+            postgres_ddl = re.sub(
+                r'CREATE TABLE `([^`]+)`',
+                r'CREATE TABLE \1',
+                postgres_ddl,
+                flags=re.IGNORECASE
+            )
         
-        for i, line in enumerate(lines):
-            if not line.strip():
+        # Type mappings (order matters - more specific first)
+        type_mappings = OrderedDict([
+            # Integer types with auto_increment - handle this FIRST
+            (r'\bint\s+NOT NULL\s+AUTO_INCREMENT\b', 'SERIAL PRIMARY KEY'),
+            (r'\bbigint\s+NOT NULL\s+AUTO_INCREMENT\b', 'BIGSERIAL PRIMARY KEY'),
+            (r'\bint\(\d+\)\s+NOT NULL\s+AUTO_INCREMENT\b', 'SERIAL PRIMARY KEY'),
+            (r'\bbigint\(\d+\)\s+NOT NULL\s+AUTO_INCREMENT\b', 'BIGSERIAL PRIMARY KEY'),
+            
+            # Boolean types
+            (r'tinyint\(1\)', 'BOOLEAN'),
+            
+            # Integer types (without auto increment)
+            (r'tinyint\(\d+\)', 'SMALLINT'),
+            (r'smallint\(\d+\)', 'SMALLINT'),
+            (r'mediumint\(\d+\)', 'INTEGER'),
+            (r'int\(\d+\)', 'INTEGER'),
+            (r'bigint\(\d+\)', 'BIGINT'),
+            (r'\btinyint\b(?!\()', 'SMALLINT'),
+            (r'\bint\b(?!\()', 'INTEGER'),
+            
+            # String types
+            (r'varchar\((\d+)\)', r'VARCHAR(\1)'),
+            (r'char\((\d+)\)', r'CHAR(\1)'),
+            (r'\btext\b', 'TEXT'),
+            (r'\blongtext\b', 'TEXT'),
+            (r'\bmediumtext\b', 'TEXT'),
+            (r'\btinytext\b', 'TEXT'),
+            
+            # Date/Time types (Prisma compatible)
+            (r'\bdatetime\(\d+\)\b', 'TIMESTAMP(3)'),
+            (r'\bdatetime\b', 'TIMESTAMP'),
+            (r'\btimestamp\b', 'TIMESTAMP'),
+            (r'\bdate\b(?=\s|,|\)|\n)', 'DATE'),
+            (r'\btime\b(?=\s|,|\)|\n)', 'TIME'),
+            
+            # Decimal types
+            (r'decimal\((\d+),(\d+)\)', r'DECIMAL(\1,\2)'),
+            (r'numeric\((\d+),(\d+)\)', r'DECIMAL(\1,\2)'),
+            (r'double', 'DOUBLE PRECISION'),
+            (r'float', 'REAL'),
+            
+            # Special types
+            (r'enum\([^)]+\)', 'VARCHAR(50)'),
+            (r'json', 'JSONB'),  # PostgreSQL native JSON
+            (r'blob', 'BYTEA'),
+            (r'longblob', 'BYTEA'),
+        ])
+        
+        # Apply type mappings
+        for mysql_pattern, postgres_type in type_mappings.items():
+            postgres_ddl = re.sub(mysql_pattern, postgres_type, postgres_ddl, flags=re.IGNORECASE)
+        
+        # Remove MySQL-specific syntax
+        postgres_ddl = re.sub(r'\s+unsigned\b', '', postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r'\s+zerofill\b', '', postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r'DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP', 'DEFAULT CURRENT_TIMESTAMP', postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r'COLLATE [a-zA-Z0-9_]+', '', postgres_ddl)
+        postgres_ddl = re.sub(r'CHARACTER SET [a-zA-Z0-9_]+', '', postgres_ddl)
+        
+        # Remove ENGINE, CHARSET, etc.
+        postgres_ddl = re.sub(r'\s*ENGINE\s*=\s*[a-zA-Z0-9_]+', '', postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r'\s*DEFAULT\s+CHARSET\s*=\s*[a-zA-Z0-9_]+', '', postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r'\s*AUTO_INCREMENT\s*=\s*\d+', '', postgres_ddl, flags=re.IGNORECASE)
+        
+        # Remove everything from PRIMARY KEY onwards (simpler approach)
+        # Find the last column definition and remove everything after it
+        
+        # Split by lines and keep only column definitions
+        lines = postgres_ddl.split('\n')
+        clean_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            # Keep CREATE TABLE line
+            if stripped.startswith('CREATE TABLE'):
+                clean_lines.append(line)
+            # Keep lines that start with backticks (column definitions) or opening parenthesis
+            elif stripped.startswith('`') or stripped.startswith('('):
+                clean_lines.append(line)
+            # Keep closing parenthesis but stop after it
+            elif stripped == ')' or stripped.startswith(')'):
+                clean_lines.append(')')
+                break
+            # Skip everything else (PRIMARY KEY, CONSTRAINT, INDEX, etc.)
+        
+        postgres_ddl = '\n'.join(clean_lines)
+        
+        # Handle reserved words in column names - need to quote them
+        def quote_reserved_columns(match):
+            column_name = match.group(1)
+            if column_name.lower() in pg_reserved_words:
+                return f'"{column_name}"'
+            else:
+                return column_name
+        
+        # Remove backticks and quote reserved column names
+        postgres_ddl = re.sub(r'`([^`]+)`', quote_reserved_columns, postgres_ddl)
+        
+        # Fix auto_increment (should be handled by SERIAL but clean up any remaining)
+        postgres_ddl = re.sub(r'\s+AUTO_INCREMENT\b', '', postgres_ddl, flags=re.IGNORECASE)
+        
+        # Fix DEFAULT values for booleans
+        postgres_ddl = re.sub(r"DEFAULT\s+'0'", "DEFAULT false", postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r"DEFAULT\s+'1'", "DEFAULT true", postgres_ddl, flags=re.IGNORECASE)
+        
+        # Fix default values
+        postgres_ddl = re.sub(r"DEFAULT\s+'0000-00-00 00:00:00'", "DEFAULT NULL", postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r"DEFAULT\s+'0000-00-00'", "DEFAULT NULL", postgres_ddl, flags=re.IGNORECASE)
+        
+        # Clean up extra commas and whitespace
+        postgres_ddl = re.sub(r',\s*,', ',', postgres_ddl)
+        postgres_ddl = re.sub(r',(\s*)\)', r'\1)', postgres_ddl)
+        
+        # Fix corrupted NULL syntax that can happen during regex processing
+        postgres_ddl = re.sub(r'\bNOT\s+N\s+NULL\b', 'NOT NULL', postgres_ddl, flags=re.IGNORECASE)
+        postgres_ddl = re.sub(r'\bN\s+NULL\b', 'NULL', postgres_ddl, flags=re.IGNORECASE)
+        
+        # Clean up spaces but preserve structure
+        postgres_ddl = re.sub(r'\s+', ' ', postgres_ddl)
+        
+        # Fix parentheses formatting for type definitions 
+        postgres_ddl = re.sub(r'VARCHAR\s*\(\s*(\d+)\s*\)', r'VARCHAR(\1)', postgres_ddl)
+        postgres_ddl = re.sub(r'CHAR\s*\(\s*(\d+)\s*\)', r'CHAR(\1)', postgres_ddl)
+        postgres_ddl = re.sub(r'DECIMAL\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)', r'DECIMAL(\1,\2)', postgres_ddl)
+        postgres_ddl = re.sub(r'TIMESTAMP\s*\(\s*(\d+)\s*\)', r'TIMESTAMP(\1)', postgres_ddl)
+        postgres_ddl = re.sub(r'CURRENT_TIMESTAMP\s*\(\s*(\d+)\s*\)', r'CURRENT_TIMESTAMP(\1)', postgres_ddl)
+        
+        # Simple formatting - just ensure proper spacing
+        postgres_ddl = re.sub(r'\s*,\s*', ', ', postgres_ddl)
+        postgres_ddl = re.sub(r'\(\s*', ' (', postgres_ddl)
+        postgres_ddl = re.sub(r'\s*\)', ')', postgres_ddl)
+        
+        # Add semicolon if not present
+        if not postgres_ddl.strip().endswith(';'):
+            postgres_ddl = postgres_ddl.strip() + ';'
+        
+        self.log(f"Converted DDL for {table_name}")
+        return postgres_ddl
+    
+    def extract_constraints_and_indexes(self, mysql_ddl, table_name):
+        """Extract constraints and indexes from MySQL DDL for later creation"""
+        constraints = []
+        indexes = []
+        foreign_keys = []
+        
+        lines = mysql_ddl.split('\n')
+        table_lower = table_name.lower()
+        
+        for line in lines:
+            line = line.strip().rstrip(',')
+            if not line:
                 continue
                 
-            # Split by tabs and clean up each field
-            fields = line.split('\t')
-            cleaned_fields = []
-            
-            for field in fields:
-                field = field.strip()
+            # Handle PRIMARY KEY
+            if re.match(r'PRIMARY\s+KEY\s+\(([^)]+)\)', line, re.IGNORECASE):
+                match = re.search(r'PRIMARY\s+KEY\s+\(([^)]+)\)', line, re.IGNORECASE)
+                if match:
+                    columns = match.group(1).replace('`', '"')
+                    constraints.append({
+                        'type': 'PRIMARY_KEY',
+                        'table': table_lower,
+                        'sql': f'ALTER TABLE {table_lower} ADD PRIMARY KEY ({columns});'
+                    })
+                continue
                 
-                # Handle NULL values
-                if field in ('NULL', 'null', '\\N', ''):
-                    cleaned_fields.append('\\N')
-                else:
-                    # Escape special characters for PostgreSQL TSV format
-                    field = field.replace('\\', '\\\\')
-                    field = field.replace('\n', '\\n')
-                    field = field.replace('\r', '\\r')
-                    field = field.replace('\t', '\\t')
+            # Handle UNIQUE KEY/INDEX
+            elif re.match(r'UNIQUE\s+(KEY|INDEX)\s+`?([^`\s]+)`?\s+\(([^)]+)\)', line, re.IGNORECASE):
+                match = re.search(r'UNIQUE\s+(?:KEY|INDEX)\s+`?([^`\s]+)`?\s+\(([^)]+)\)', line, re.IGNORECASE)
+                if match:
+                    constraint_name = match.group(1)
+                    columns = match.group(2).replace('`', '"')
+                    constraints.append({
+                        'type': 'UNIQUE',
+                        'table': table_lower,
+                        'name': constraint_name,
+                        'sql': f'ALTER TABLE {table_lower} ADD CONSTRAINT {constraint_name} UNIQUE ({columns});'
+                    })
+                continue
+                
+            # Handle regular KEY/INDEX
+            elif re.match(r'(KEY|INDEX)\s+`?([^`\s]+)`?\s+\(([^)]+)\)', line, re.IGNORECASE):
+                match = re.search(r'(?:KEY|INDEX)\s+`?([^`\s]+)`?\s+\(([^)]+)\)', line, re.IGNORECASE)
+                if match:
+                    index_name = match.group(1)
+                    columns = match.group(2).replace('`', '"')
+                    indexes.append({
+                        'type': 'INDEX',
+                        'table': table_lower,
+                        'name': index_name,
+                        'sql': f'CREATE INDEX {index_name} ON {table_lower} ({columns});'
+                    })
+                continue
+                
+            # Handle FOREIGN KEY constraints
+            elif re.match(r'CONSTRAINT\s+`?([^`\s]+)`?\s+FOREIGN\s+KEY', line, re.IGNORECASE):
+                # Extract foreign key information
+                fk_match = re.search(
+                    r'CONSTRAINT\s+`?([^`\s]+)`?\s+FOREIGN\s+KEY\s+\(([^)]+)\)\s+REFERENCES\s+`?([^`\s]+)`?\s+\(([^)]+)\)',
+                    line, re.IGNORECASE
+                )
+                if fk_match:
+                    constraint_name = fk_match.group(1)
+                    local_columns = fk_match.group(2).replace('`', '"')
+                    ref_table = fk_match.group(3).lower()
+                    ref_columns = fk_match.group(4).replace('`', '"')
                     
-                    # Handle JSON data - ensure it's properly formatted
-                    if field.startswith('[') or field.startswith('{'):
-                        try:
-                            import json
-                            parsed = json.loads(field)
-                            field = json.dumps(parsed)
-                        except:
-                            # If JSON parsing fails, just escape quotes
-                            field = field.replace('"', '\\"')
-                    
-                    cleaned_fields.append(field)
+                    foreign_keys.append({
+                        'type': 'FOREIGN_KEY',
+                        'table': table_lower,
+                        'name': constraint_name,
+                        'local_columns': local_columns,
+                        'ref_table': ref_table,
+                        'ref_columns': ref_columns,
+                        'sql': f'ALTER TABLE {table_lower} ADD CONSTRAINT {constraint_name} FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns});'
+                    })
+                continue
+        
+        return constraints, indexes, foreign_keys
+
+    def convert_mysql_ddl_to_postgres_with_constraints(self, mysql_ddl, table_name):
+        """Convert MySQL DDL to PostgreSQL DDL while preserving important constraints"""
+        self.log(f"Converting MySQL DDL to PostgreSQL for {table_name}...")
+        
+        # Extract constraints and indexes for later creation
+        constraints, indexes, foreign_keys = self.extract_constraints_and_indexes(mysql_ddl, table_name)
+        
+        # Store for later creation
+        if not hasattr(self, 'pending_constraints'):
+            self.pending_constraints = []
+        if not hasattr(self, 'pending_indexes'):
+            self.pending_indexes = []
+        if not hasattr(self, 'pending_foreign_keys'):
+            self.pending_foreign_keys = []
             
-            cleaned_lines.append('\t'.join(cleaned_fields))
+        self.pending_constraints.extend(constraints)
+        self.pending_indexes.extend(indexes)
+        self.pending_foreign_keys.extend(foreign_keys)
         
-        # Write cleaned data to temporary file
-        temp_file = f"/tmp/{table}_data.tsv"
-        with open(f"temp_{table}.tsv", "w", encoding="utf-8") as f:
-            f.write('\n'.join(cleaned_lines))
+        # Now create the basic table DDL without constraints (they'll be added later)
+        postgres_ddl = self.convert_mysql_ddl_to_postgres(mysql_ddl, table_name)
         
-        # Copy file to PostgreSQL container
-        copy_cmd = f"docker cp temp_{table}.tsv {self.postgres_container}:{temp_file}"
-        result = self.run_command(copy_cmd)
+        return postgres_ddl
+
+    def create_constraints_and_indexes(self):
+        """Create all constraints and indexes after all tables have been created"""
+        if not hasattr(self, 'pending_constraints') and not hasattr(self, 'pending_indexes') and not hasattr(self, 'pending_foreign_keys'):
+            return
+            
+        self.log("Creating constraints and indexes...")
         
-        if not result or result.returncode != 0:
-            self.log(f"Failed to copy data file for table: {table}", "ERROR")
-            return False
+        # Create PRIMARY KEY and UNIQUE constraints first
+        if hasattr(self, 'pending_constraints'):
+            for constraint in self.pending_constraints:
+                self.log(f"Creating {constraint['type']} constraint on {constraint['table']}")
+                result = self.run_command(f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -c "{constraint["sql"]}"')
+                if result and result.returncode != 0:
+                    self.log(f"Failed to create constraint: {constraint['sql']}", "WARNING")
         
-        # Import data using COPY - let PostgreSQL handle column mapping automatically
-        copy_sql = f"\\COPY \"{table}\" FROM '{temp_file}' WITH (FORMAT csv, HEADER true, DELIMITER E'\\t', NULL '\\\\N', ENCODING 'UTF8')"
-        cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -c "{copy_sql}"'
-        result = self.run_command(cmd)
+        # Create indexes
+        if hasattr(self, 'pending_indexes'):
+            for index in self.pending_indexes:
+                self.log(f"Creating index {index['name']} on {index['table']}")
+                result = self.run_command(f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -c "{index["sql"]}"')
+                if result and result.returncode != 0:
+                    self.log(f"Failed to create index: {index['sql']}", "WARNING")
         
-        # Clean up temp file
+        # Create foreign keys last (after all tables and primary keys exist)
+        if hasattr(self, 'pending_foreign_keys'):
+            for fk in self.pending_foreign_keys:
+                self.log(f"Creating foreign key {fk['name']} on {fk['table']}")
+                result = self.run_command(f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -c "{fk["sql"]}"')
+                if result and result.returncode != 0:
+                    self.log(f"Failed to create foreign key: {fk['sql']}", "WARNING")
+        
+        self.log("Constraints and indexes creation completed")
+
+    def fix_json_format(self, json_str):
+        """Fix invalid JSON format from MySQL"""
         try:
-            os.remove(f"temp_{table}.tsv")
-        except:
-            pass
-        self.run_command(f"docker exec {self.postgres_container} rm {temp_file}")
+            import json as json_module
+            
+            # First check if it's already valid JSON
+            if json_str.startswith('[{"') and json_str.endswith('"}]'):
+                # Already properly formatted, return as-is
+                return json_str
+            
+            # Handle single JSON object format: {"key": "value"}
+            if json_str.startswith('{"') and json_str.endswith('"}'):
+                # Already properly formatted single object
+                return json_str
+            
+            # Handle the invalid case: [{date: 2025-02-02, time: 00:53}]
+            if json_str.startswith('[{') and json_str.endswith('}]') and '"' not in json_str:
+                # Use a more specific approach for the known format
+                # Pattern: [{key: value, key2: value2}]
+                # Convert to: [{"key": "value", "key2": "value2"}]
+                
+                # Extract content between [{ and }]
+                content = json_str[2:-2]  # Remove [{ and }]
+                
+                # Split by comma and process each key-value pair
+                pairs = content.split(', ')
+                fixed_pairs = []
+                
+                for pair in pairs:
+                    if ':' in pair:
+                        key, value = pair.split(':', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # Add quotes around key and value
+                        fixed_pairs.append(f'"{key}": "{value}"')
+                
+                return '[{' + ', '.join(fixed_pairs) + '}]'
+            
+            # Handle single object invalid case: {date: 2025-02-02, time: 00:53}
+            if json_str.startswith('{') and json_str.endswith('}') and '"' not in json_str:
+                # Extract content between { and }
+                content = json_str[1:-1]  # Remove { and }
+                
+                # Split by comma and process each key-value pair
+                pairs = content.split(', ')
+                fixed_pairs = []
+                
+                for pair in pairs:
+                    if ':' in pair:
+                        key, value = pair.split(':', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # Add quotes around key and value
+                        fixed_pairs.append(f'"{key}": "{value}"')
+                
+                return '{' + ', '.join(fixed_pairs) + '}'
+            
+            # Handle array of JSON objects where individual objects need fixing
+            if json_str.startswith('[') and json_str.endswith(']'):
+                try:
+                    # Try to parse as JSON array
+                    parsed = json_module.loads(json_str)
+                    return json_str  # Already valid
+                except json_module.JSONDecodeError:
+                    # Invalid JSON array, try to fix it
+                    content = json_str[1:-1]  # Remove [ and ]
+                    
+                    # Split by }, { to get individual objects
+                    objects = []
+                    current_obj = ""
+                    brace_count = 0
+                    
+                    for char in content:
+                        current_obj += char
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                # End of an object
+                                objects.append(current_obj.strip())
+                                current_obj = ""
+                                brace_count = 0
+                    
+                    # Fix each object
+                    fixed_objects = []
+                    for obj in objects:
+                        if obj.startswith(','):
+                            obj = obj[1:].strip()
+                        if obj:
+                            fixed_obj = self.fix_json_format(obj)
+                            fixed_objects.append(fixed_obj)
+                    
+                    return '[' + ', '.join(fixed_objects) + ']'
+            
+            # For other JSON formats, return as-is
+            return json_str
+        except Exception as e:
+            # If all else fails, return the original string
+            self.log(f"JSON format fix failed for: {json_str[:50]}... Error: {str(e)}", "WARNING")
+            return json_str
+
+    def get_table_column_count(self, table_name):
+        """Get the actual column count for a table from MySQL using DESCRIBE"""
+        self.log(f"Getting column count for table: {table_name}")
+        
+        # Use DESCRIBE to get column information
+        desc_cmd = f'docker exec {self.mysql_container} mysql -u root -prootpass -D {self.mysql_db} -e "DESCRIBE `{table_name}`;"'
+        result = self.run_command(desc_cmd)
         
         if result and result.returncode == 0:
-            # Count imported rows
-            count_cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -t -c "SELECT COUNT(*) FROM \\"{table}\\""'
-            count_result = self.run_command(count_cmd)
-            
-            if count_result and count_result.returncode == 0:
-                try:
-                    row_count = int(count_result.stdout.strip())
-                    self.log(f"[OK] Imported {row_count} rows to table: {table}")
-                    self.stats['total_rows'] += row_count
-                    return True
-                except:
-                    self.log(f"[OK] Data imported to table: {table} (count check failed)")
-                    return True
-            
-            return True
+            try:
+                # Count non-header lines
+                desc_lines = [line for line in result.stdout.strip().split('\n')[1:] if line.strip()]
+                column_count = len(desc_lines)
+                self.log(f"Table {table_name} has {column_count} columns")
+                return column_count
+            except Exception as e:
+                self.log(f"Error parsing DESCRIBE output for {table_name}: {str(e)}", "WARNING")
+        
+        # Fallback to information_schema query
+        col_count_cmd = f'docker exec {self.mysql_container} mysql -u root -prootpass -D {self.mysql_db} -e "SELECT COUNT(*) as column_count FROM information_schema.columns WHERE table_name = \'{table_name}\' AND table_schema = \'{self.mysql_db}\';" --batch --skip-column-names'
+        result = self.run_command(col_count_cmd)
+        
+        if result and result.returncode == 0:
+            try:
+                column_count = int(result.stdout.strip())
+                self.log(f"Table {table_name} has {column_count} columns (from information_schema)")
+                return column_count
+            except:
+                pass
+        
+        # Final fallback - estimate based on table name
+        if table_name.lower() in ['appointment']:
+            return 42  # Known column count for appointment
+        elif table_name.lower() in ['company']:
+            return 32  # Known column count for company
         else:
-            self.log(f"[ERROR] Failed to import data for table: {table}", "ERROR")
-            if result and result.stderr:
-                # Log first line of error for debugging
-                error_line = result.stderr.split('\n')[0]
-                self.log(f"Error details: {error_line}", "ERROR")
-            return False
-    
-    def clean_mysql_data(self, mysql_output):
-        """Clean MySQL export data for PostgreSQL import"""
+            self.log(f"Using default column count for {table_name}", "WARNING")
+            return 20  # Default estimation
+
+    def clean_mysql_data(self, mysql_output, table_name=None):
+        """Clean MySQL export data for PostgreSQL import with advanced handling from successful scripts"""
         lines = mysql_output.split('\n')
         if not lines:
             return ""
         
-        cleaned_lines = []
+        # Get actual column count for the table
+        expected_columns = self.get_table_column_count(table_name) if table_name else 20
+        self.log(f"Expected columns for table {table_name}: {expected_columns}")
         
-        for line in lines:
-            # Remove problematic characters
-            line = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', line)
+        cleaned_lines = []
+        skipped_records = 0
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if not line.strip():
+                i += 1
+                continue
             
-            # Convert MySQL NULL representation to PostgreSQL format
+            # Handle embedded newlines by combining lines until we have the right column count
             parts = line.split('\t')
-            cleaned_parts = []
+            while len(parts) < expected_columns and i + 1 < len(lines):
+                i += 1
+                if i < len(lines):
+                    # Replace the newline with a space and combine
+                    line = line.replace('\n', ' ') + ' ' + lines[i]
+                    parts = line.split('\t')
             
-            for part in parts:
+            # Clean each field individually
+            cleaned_parts = []
+            for j, part in enumerate(parts[:expected_columns]):  # Only take expected number of columns
                 part = part.strip()
+                
+                # Handle NULL values
                 if part in ('NULL', 'null', '\\N', ''):
                     cleaned_parts.append('\\N')
                 else:
-                    # Escape special characters for CSV
-                    part = part.replace('\\', '\\\\')
-                    part = part.replace('\n', '\\n')
-                    part = part.replace('\r', '\\r')
-                    part = part.replace('\t', '\\t')
+                    # Fix JSON format (if any)
+                    if part.startswith('[{') or part.startswith('{'):
+                        part = self.fix_json_format(part)
+                    
+                    # Remove control characters but preserve text content
+                    part = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', part)
+                    
+                    # Handle fields that might contain tabs, newlines, or quotes
+                    part = part.replace('\n', ' ')  # Replace newlines with spaces
+                    part = part.replace('\r', ' ')  # Replace carriage returns with spaces
+                    part = part.replace('\t', ' ')  # Replace tabs with spaces
+                    
+                    # Escape for CSV format if needed
+                    if '\t' in part or '\n' in part or '"' in part or ',' in part:
+                        part = '"' + part.replace('"', '""') + '"'
+                    
                     cleaned_parts.append(part)
             
-            cleaned_lines.append('\t'.join(cleaned_parts))
+            # Pad with NULLs if needed
+            while len(cleaned_parts) < expected_columns:
+                cleaned_parts.append('\\N')
+            
+            # Only add if we have the right number of columns
+            if len(cleaned_parts) == expected_columns:
+                cleaned_lines.append('\t'.join(cleaned_parts))
+            else:
+                self.log(f"⚠️ Skipping malformed line {i+1}: {len(cleaned_parts)} columns (expected {expected_columns})", "WARNING")
+                skipped_records += 1
+            
+            i += 1
         
+        if skipped_records > 0:
+            self.log(f"Skipped {skipped_records} malformed records in table {table_name}", "WARNING")
+        
+        self.log(f"Cleaned data: {len(cleaned_lines)} records for table {table_name}")
         return '\n'.join(cleaned_lines)
     
     def fix_null_values(self, tables):
@@ -587,8 +939,11 @@ networks:
         self.log("Fixing NULL values...")
         
         for table in tables:
+            # Apply same table name conversion as used in schema creation and data migration
+            postgres_table_name = self.reserved_words.get(table.lower(), table.lower())
+            
             # Get table columns
-            column_query = f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}' AND table_schema = 'public'"
+            column_query = f"SELECT column_name FROM information_schema.columns WHERE table_name = '{postgres_table_name}' AND table_schema = 'public'"
             cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -t -c "{column_query}"'
             result = self.run_command(cmd)
             
@@ -599,10 +954,27 @@ networks:
             
             # Fix \\N values in each column
             for column in columns:
-                # Create proper SQL for NULL value fixing
-                null_fix_query = f"UPDATE \"{table}\" SET \"{column}\" = NULL WHERE \"{column}\" = '\\\\N'"
-                update_cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -c "{null_fix_query}"'
+                # Create proper SQL for NULL value fixing - use postgres table name  
+                null_fix_query = f"UPDATE {postgres_table_name} SET {column} = NULL WHERE {column} = '\\\\N';"
+                
+                # Create SQL file to avoid escaping issues
+                sql_file = f"temp_null_fix_{table}_{column}.sql"
+                with open(sql_file, "w", encoding="utf-8") as f:
+                    f.write(null_fix_query)
+                
+                # Copy and execute
+                copy_cmd = f"docker cp {sql_file} {self.postgres_container}:/tmp/{sql_file}"
+                self.run_command(copy_cmd)
+                
+                update_cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -f /tmp/{sql_file}'
                 self.run_command(update_cmd)
+                
+                # Clean up
+                try:
+                    os.remove(sql_file)
+                except:
+                    pass
+                self.run_command(f"docker exec {self.postgres_container} rm /tmp/{sql_file}")
         
         self.log("[OK] NULL values fixed")
     
@@ -708,8 +1080,7 @@ networks:
             else:
                 self.stats['errors'].append(f"Data migration failed: {table}")
         
-        # Fix NULL values
-        self.fix_null_values(tables)
+        # NULL values are already handled correctly during data cleaning
         
         # Optimize PostgreSQL
         self.optimize_postgres()
@@ -718,6 +1089,279 @@ networks:
         self.generate_report()
         
         return len(self.stats['errors']) == 0
+
+    def export_data_as_csv(self, table):
+        """Alternative export method using CSV format with proper escaping"""
+        self.log(f"Trying CSV export for table: {table}")
+        
+        # Try CSV export with proper escaping
+        csv_cmd = f'''docker exec {self.mysql_container} mysql -u root -prootpass -D {self.mysql_db} -e "
+SELECT * FROM `{table}`
+INTO OUTFILE '/tmp/{table}_export.csv'
+FIELDS TERMINATED BY '\\t'
+OPTIONALLY ENCLOSED BY '\\"'
+ESCAPED BY '\\\\\\\\'
+LINES TERMINATED BY '\\n';"'''
+        
+        csv_result = self.run_command(csv_cmd)
+        
+        if csv_result and csv_result.returncode == 0:
+            # Copy the file from MySQL container
+            copy_cmd = f"docker cp {self.mysql_container}:/tmp/{table}_export.csv ./{table}_mysql_export.csv"
+            copy_result = self.run_command(copy_cmd)
+            
+            if copy_result and copy_result.returncode == 0:
+                self.log(f"✅ CSV export successful for table: {table}")
+                
+                # Read the CSV data
+                try:
+                    with open(f"{table}_mysql_export.csv", "r", encoding="utf-8") as f:
+                        raw_data = f.read()
+                    
+                    # Clean up the temporary CSV file
+                    os.remove(f"{table}_mysql_export.csv")
+                    
+                    return raw_data
+                except Exception as e:
+                    self.log(f"Failed to read CSV export for {table}: {str(e)}", "ERROR")
+                    return None
+        
+        return None
+
+    def clean_csv_data(self, csv_data, expected_columns):
+        """Clean CSV data exported from MySQL"""
+        lines = csv_data.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            if not line.strip():
+                continue
+            
+            # Split by tab
+            parts = line.split('\t')
+            
+            # If we have the expected number of columns, process normally
+            if len(parts) == expected_columns:
+                cleaned_parts = []
+                for part in parts:
+                    part = part.strip()
+                    if part in ('NULL', 'null', '\\N', ''):
+                        cleaned_parts.append('\\N')
+                    else:
+                        # Handle JSON fields specially
+                        if part.startswith('[{') and part.endswith('}]') or part.startswith('{') and part.endswith('}'):
+                            # Fix JSON format if needed
+                            fixed_json = self.fix_json_format(part)
+                            # Escape for CSV: wrap in quotes and double internal quotes
+                            escaped_json = '"' + fixed_json.replace('"', '""') + '"'
+                            cleaned_parts.append(escaped_json)
+                        else:
+                            # Remove quotes if they exist and clean content
+                            if part.startswith('"') and part.endswith('"'):
+                                part = part[1:-1]  # Remove surrounding quotes
+                            
+                            # Replace problematic characters
+                            part = part.replace('\n', ' ')
+                            part = part.replace('\r', ' ')
+                            part = part.replace('\t', ' ')
+                            part = part.replace('\\', '\\\\')
+                            
+                            cleaned_parts.append(part)
+                
+                cleaned_lines.append('\t'.join(cleaned_parts))
+        
+        return '\n'.join(cleaned_lines)
+
+    def export_and_import_data(self, table):
+        """Export data from MySQL and import to PostgreSQL with advanced cleaning"""
+        
+        self.log(f"Migrating data for table: {table}")
+        
+        # First, try to get the actual column count for better validation
+        column_count = self.get_table_column_count(table)
+        self.log(f"Table {table} has {column_count} columns")
+        
+        # Export data from MySQL as TSV (no headers needed for PostgreSQL COPY)
+        cmd = f'docker exec {self.mysql_container} mysql -u root -prootpass -D {self.mysql_db} -e "SELECT * FROM `{table}`;" --batch --raw --skip-column-names --default-character-set=utf8mb4'
+        result = self.run_command(cmd)
+        
+        original_lines_count = 0
+        cleaned_data = None
+        
+        if not result or result.returncode != 0:
+            self.log(f"Regular export failed for table: {table}, trying CSV export...", "WARNING")
+            # Try CSV export as fallback
+            csv_data = self.export_data_as_csv(table)
+            if csv_data:
+                self.log(f"Using CSV export data for table: {table}")
+                # Clean the CSV data
+                cleaned_data = self.clean_csv_data(csv_data, column_count)
+                original_lines_count = len(csv_data.split('\n'))
+            else:
+                self.log(f"Failed to export data from table: {table}", "ERROR")
+                if result and result.stderr:
+                    self.log(f"MySQL export error: {result.stderr.strip()[:200]}", "ERROR")
+                return False
+        else:
+            # Check if table has data
+            if not result.stdout or not result.stdout.strip():
+                self.log(f"Table {table} is empty")
+                return True
+            
+            lines = result.stdout.strip().split('\n')
+            original_lines_count = len(lines)
+            
+            if not lines or all(not line.strip() for line in lines):
+                self.log(f"Table {table} is empty")
+                return True
+            
+            self.log(f"Exported {original_lines_count} lines from MySQL for table {table}")
+            
+            # Clean and process the data using the improved cleaning function
+            cleaned_data = self.clean_mysql_data(result.stdout.strip(), table_name=table)
+        
+        if not cleaned_data.strip():
+            self.log(f"No data after cleaning for table: {table}", "WARNING")
+            return True
+        
+        cleaned_lines = cleaned_data.split('\n')
+        # Filter out any remaining empty lines
+        cleaned_lines = [line for line in cleaned_lines if line.strip()]
+        
+        if not cleaned_lines:
+            self.log(f"No valid data lines after cleaning for table: {table}", "WARNING")
+            return True
+        
+        self.log(f"Cleaned to {len(cleaned_lines)} lines for table {table}")
+        
+        # Validate that all cleaned lines have the expected number of columns
+        valid_lines = []
+        invalid_count = 0
+        
+        for line in cleaned_lines:
+            parts = line.split('\t')
+            if len(parts) == column_count:
+                valid_lines.append(line)
+            else:
+                invalid_count += 1
+                if invalid_count <= 3:  # Log first 3 invalid lines for debugging
+                    self.log(f"Invalid line in {table}: {len(parts)} columns (expected {column_count}): {line[:100]}...", "WARNING")
+        
+        if invalid_count > 0:
+            self.log(f"Removed {invalid_count} invalid lines from {table}", "WARNING")
+        
+        if not valid_lines:
+            self.log(f"No valid lines remaining after validation for table: {table}", "WARNING")
+            return True
+        
+        final_data = '\n'.join(valid_lines)
+        
+        # Write cleaned data to temporary file
+        temp_file = f"/tmp/{table}_data.tsv"
+        local_temp_file = f"temp_{table}.tsv"
+        
+        with open(local_temp_file, "w", encoding="utf-8") as f:
+            f.write(final_data)
+        
+        self.log(f"Wrote {len(valid_lines)} valid lines to {local_temp_file}")
+        
+        # Copy file to PostgreSQL container
+        copy_cmd = f"docker cp {local_temp_file} {self.postgres_container}:{temp_file}"
+        result = self.run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            self.log(f"Failed to copy data file for table: {table}", "ERROR")
+            return False
+        
+        # Import data using COPY - use proper table name mapping (handle reserved words)
+        # Apply same table name conversion as used in schema creation
+        postgres_table_name = self.reserved_words.get(table.lower(), table.lower())
+        
+        # Use quoted table name for case sensitivity
+        if table != table.lower():
+            postgres_table_name = f'"{table}"'
+        
+        copy_sql = f'COPY {postgres_table_name} FROM \'{temp_file}\' WITH (FORMAT csv, DELIMITER E\'\\t\', NULL \'\\N\', ENCODING \'UTF8\');'
+        
+        # Create SQL file to avoid command line escaping issues
+        sql_file = f"temp_{table}_copy.sql"
+        with open(sql_file, "w", encoding="utf-8") as f:
+            f.write(copy_sql)
+        
+        # Copy SQL file to container and execute
+        copy_sql_cmd = f"docker cp {sql_file} {self.postgres_container}:/tmp/{sql_file}"
+        self.run_command(copy_sql_cmd)
+        
+        cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -f /tmp/{sql_file}'
+        result = self.run_command(cmd)
+        
+        # Clean up temp files
+        try:
+            os.remove(local_temp_file)
+            os.remove(sql_file)
+        except:
+            pass
+        self.run_command(f"docker exec {self.postgres_container} rm {temp_file}")
+        self.run_command(f"docker exec {self.postgres_container} rm /tmp/{sql_file}")
+        
+        if result and result.returncode == 0:
+            # Count imported rows
+            count_cmd = f'docker exec {self.postgres_container} psql -U {self.postgres_user} -d {self.postgres_db} -t -c "SELECT COUNT(*) FROM {postgres_table_name};"'
+            count_result = self.run_command(count_cmd)
+            
+            if count_result and count_result.returncode == 0:
+                try:
+                    row_count = int(count_result.stdout.strip())
+                    self.log(f"Imported {row_count} rows to table: {table}")
+                    self.stats['total_rows'] += row_count
+                    
+                    # Also log the percentage of rows successfully imported
+                    success_rate = (row_count / original_lines_count * 100) if original_lines_count > 0 else 0
+                    self.log(f"Import success rate: {success_rate:.1f}% ({row_count}/{original_lines_count})")
+                    
+                    return True
+                except ValueError:
+                    self.log(f"✅ Data imported to table: {table} (count check failed)")
+                    return True
+            
+            return True
+        else:
+            self.log(f"❌ Failed to import data for table: {table}", "ERROR")
+            if result and result.stderr:
+                # Log first few lines of error for debugging
+                error_lines = result.stderr.split('\n')[:3]
+                for error_line in error_lines:
+                    if error_line.strip():
+                        self.log(f"PostgreSQL error: {error_line.strip()}", "ERROR")
+            return False
+
+    def create_postgres_schema(self, tables):
+        """Create PostgreSQL tables from MySQL schema using constraint-aware method"""
+        self.log("Creating PostgreSQL schema...")
+        
+        for table in tables:
+            self.log(f"Creating table: {table}")
+            
+            # Get actual MySQL table structure using SHOW CREATE TABLE
+            mysql_ddl = self.get_mysql_table_structure(table)
+            if not mysql_ddl:
+                self.log(f"Failed to get structure for table: {table}", "ERROR")
+                continue
+            
+            # Create table using constraint-aware DDL conversion
+            postgres_ddl = self.convert_mysql_ddl_to_postgres_with_constraints(mysql_ddl, table)
+            if not postgres_ddl:
+                self.log(f"Failed to convert DDL for table: {table}", "ERROR")
+                continue
+                
+            # Create the table
+            if self.create_postgresql_table_improved(table, postgres_ddl):
+                self.stats['tables_created'] += 1
+            else:
+                self.stats['errors'].append(f"Table creation failed: {table}")
+        
+        # After all tables are created, create constraints and indexes
+        self.create_constraints_and_indexes()
 
 def main():
     print("MySQL to PostgreSQL + Prisma Migration Tool")
