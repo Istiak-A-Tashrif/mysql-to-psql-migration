@@ -869,7 +869,7 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
         return False
     
     max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_varchar_id.sql'
-    print(f"🔍 Debug: max_varchar_id_cmd={max_varchar_id_cmd}")
+    print(f"🔍 Debug: max_id_cmd={max_id_cmd}")
     max_result = run_command(max_id_cmd)
     
     # Cleanup
