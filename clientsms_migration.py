@@ -194,10 +194,11 @@ def process_clientsms_column_definition(line, preserve_case):
     if '"from"' in line:
         print(f"🔧 Handling reserved word 'from' in column definition")
     
-    # ClientSMS-specific fix: Make message column nullable due to NULL values in source data
-    if '"message"' in line and 'NOT NULL' in line:
+    # ClientSMS-specific fix: Make message nullable
+    if '"message"' in line:
+        # Remove NOT NULL if present
         line = line.replace('NOT NULL', '')
-        print(f"🔧 Made message column nullable due to NULL values in source data")
+        print(f"🔧 Allowing message column to be NULL (nullable field)")
     
     # Handle ENUM types - convert to PostgreSQL ENUM or VARCHAR
     enum_pattern = r'enum\(([^)]+)\)'
@@ -206,8 +207,8 @@ def process_clientsms_column_definition(line, preserve_case):
         enum_values = enum_match.group(1)
         # For ClientSMS sentBy enum, create a proper PostgreSQL enum
         if 'sentBy' in line:
-            line = re.sub(enum_pattern, 'VARCHAR(50)', line, flags=re.IGNORECASE)
-            print(f"🔧 Converted sentBy ENUM to VARCHAR(50) for ClientSMS")
+            line = re.sub(enum_pattern, 'sentby_enum', line, flags=re.IGNORECASE)
+            print(f"🔧 Converted sentBy ENUM to sentby_enum for ClientSMS")
         else:
             line = re.sub(enum_pattern, 'VARCHAR(100)', line, flags=re.IGNORECASE)
             print(f"🔧 Converted ENUM to VARCHAR for ClientSMS")
@@ -267,6 +268,33 @@ def process_clientsms_column_definition(line, preserve_case):
 
 def create_clientsms_table(mysql_ddl):
     """Create ClientSMS table in PostgreSQL"""
+    print(f"📋 Generating PostgreSQL DDL for {TABLE_NAME}...")
+    
+    # Create the enum type for sentBy
+    print("🔧 Creating sentBy enum type...")
+    enum_sql = '''
+    DO $$ BEGIN
+        CREATE TYPE sentby_enum AS ENUM ('Client', 'Company');
+    EXCEPTION
+        WHEN duplicate_object THEN null;
+    END $$;
+    '''
+    
+    with open('create_enum.sql', 'w', encoding='utf-8') as f:
+        f.write(enum_sql)
+    
+    copy_enum_cmd = 'docker cp create_enum.sql postgres_target:/tmp/create_enum.sql'
+    result = run_command(copy_enum_cmd)
+    
+    if result and result.returncode == 0:
+        enum_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_enum.sql'
+        result = run_command(enum_cmd)
+        if result and result.returncode == 0:
+            print("✅ Created sentBy enum type")
+        else:
+            print(f"⚠️ Enum creation warning: {result.stderr if result else 'No result'}")
+    
+    # Convert MySQL DDL to PostgreSQL DDL
     postgres_ddl = convert_clientsms_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     if not postgres_ddl:
         return False
@@ -373,20 +401,120 @@ def phase1_create_table_and_data():
     if not create_clientsms_table(mysql_ddl):
         return False
     
-    # Use custom import method for ClientSMS
-    if not import_clientsms_data_custom():
+    # Use a different approach - export with proper escaping
+    print("🔄 Exporting ClientSMS data with proper escaping...")
+    
+    # Export using basic tab-separated format
+    export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT id, message, `from`, `to`, sentBy, is_read, user_id, company_id, client_id, created_at, updated_at FROM ClientSMS" -B --skip-column-names'''
+    result = run_command(export_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to export ClientSMS data: {result.stderr if result else 'No result'}")
         return False
     
-    # Add primary key constraint
-    if not add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE):
-        return False
-    
-    # Setup auto-increment sequence
-    if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
-        return False
-    
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
-    return True
+    # Process the tab-separated data and convert to proper CSV
+    try:
+        # Read the raw output and process it correctly
+        raw_data = result.stdout
+        
+        # Split by lines first, then reconstruct rows properly
+        lines = raw_data.splitlines()
+        csv_lines = []
+        current_row = []
+        field_count = 11
+        
+        for line in lines:
+            if not line.strip():
+                continue
+                
+            # Split by tab
+            fields = line.split('\t')
+            
+            if len(fields) == field_count:
+                # Complete row
+                csv_lines.append(process_csv_row(fields))
+            elif len(fields) < field_count:
+                # Incomplete row - accumulate
+                current_row.extend(fields)
+                if len(current_row) == field_count:
+                    csv_lines.append(process_csv_row(current_row))
+                    current_row = []
+            else:
+                # Too many fields - this shouldn't happen
+                print(f"⚠️ Skipping malformed row with {len(fields)} fields")
+        
+        # Handle any remaining fields
+        if current_row and len(current_row) == field_count:
+            csv_lines.append(process_csv_row(current_row))
+        
+        print(f"📊 Processed {len(csv_lines)} rows from export")
+        
+        # Write processed CSV
+        with open('ClientSMS_processed.csv', 'w', encoding='utf-8') as f:
+            f.write('\n'.join(csv_lines))
+        
+        # Print the first 10 lines of the processed CSV for debugging
+        print("\n--- First 10 lines of ClientSMS_processed.csv ---")
+        with open('ClientSMS_processed.csv', 'r', encoding='utf-8') as f:
+            for i, line in enumerate(f):
+                print(line.rstrip())
+                if i >= 9:
+                    break
+        print("--- End of sample ---\n")
+
+        # Print the number of fields per row for the first 10 rows
+        print("Field counts for first 10 rows:")
+        with open('ClientSMS_processed.csv', 'r', encoding='utf-8') as f:
+            import csv
+            reader = csv.reader(f)
+            for i, row in enumerate(reader):
+                print(f"Row {i+1}: {len(row)} fields")
+                if i >= 9:
+                    break
+
+        # Copy to PostgreSQL container
+        copy_cmd = 'docker cp ClientSMS_processed.csv postgres_target:/tmp/ClientSMS_import.csv'
+        result = run_command(copy_cmd)
+        if not result or result.returncode != 0:
+            print(f"❌ Failed to copy processed CSV: {result.stderr if result else 'No result'}")
+            return False
+
+        # Import using COPY command
+        copy_sql = '''COPY "ClientSMS" ("id", "message", "from", "to", "sentBy", "is_read", "user_id", "company_id", "client_id", "created_at", "updated_at") FROM '/tmp/ClientSMS_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
+        with open('import_clientsms.sql', 'w', encoding='utf-8') as f:
+            f.write(copy_sql)
+        # Copy SQL file to container
+        copy_sql_cmd = 'docker cp import_clientsms.sql postgres_target:/tmp/import_clientsms.sql'
+        result = run_command(copy_sql_cmd)
+        if not result or result.returncode != 0:
+            print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+            return False
+        # Execute the import
+        import_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_clientsms.sql'
+        result = run_command(import_cmd)
+        print("\n--- COPY command output ---")
+        if result:
+            print("STDOUT:\n", result.stdout)
+            print("STDERR:\n", result.stderr)
+        print("--- End of COPY output ---\n")
+        if not result or result.returncode != 0:
+            print(f"❌ Failed to import ClientSMS data: {result.stderr if result else 'No result'}")
+            if result:
+                print(f"🔍 Import command stdout: {result.stdout}")
+            return False
+        print(f"✅ Successfully imported ClientSMS data")
+        return True
+        
+    finally:
+        # Clean up temporary files
+        cleanup_cmds = [
+            'rm -f import_clientsms.sql',
+            'docker exec postgres_target rm -f /tmp/ClientSMS_import.csv',
+            'docker exec postgres_target rm -f /tmp/import_clientsms.sql'
+        ]
+        
+        for cmd in cleanup_cmds:
+            run_command(cmd)
 
 def phase2_create_indexes():
     """Phase 2: Create indexes for ClientSMS table"""
@@ -410,25 +538,20 @@ def phase3_create_foreign_keys():
     
     return create_clientsms_foreign_keys(foreign_keys)
 
-def import_clientsms_data_custom():
-    """Custom import for ClientSMS data to handle special characters in messages"""
-    print("📥 Importing ClientSMS data using custom method...")
-    
-    # Drop existing data
-    drop_cmd = 'docker exec postgres_target psql -U postgres -d target_db -c "DELETE FROM \"ClientSMS\";"'
-    result = run_command(drop_cmd)
-    
-    # Use the standard table_utils import but exclude the problematic message column first
-    print("🔄 Importing basic ClientSMS data without messages...")
-    
-    # First, let's just import the data without the message column to test
-    if not export_and_clean_mysql_data(TABLE_NAME):
-        return False
-    
-    if not import_data_to_postgresql(TABLE_NAME, "ClientSMS", PRESERVE_MYSQL_CASE, include_id=True):
-        return False
-        
-    return True
+def process_csv_row(fields):
+    # user_id is the 7th field (index 6)
+    out_fields = []
+    for i, field in enumerate(fields):
+        if field == 'NULL' or field.strip() == '':
+            if i == 6:
+                out_fields.append('')  # unquoted for user_id
+            else:
+                out_fields.append('""')  # quoted empty for others
+        else:
+            # Clean up the field and handle newlines and quotes
+            field = field.strip().replace('"', '""').replace('\n', '\\n').replace('\r', '\\r')
+            out_fields.append(f'"{field}"')
+    return ','.join(out_fields)
 
 def main():
     parser = argparse.ArgumentParser(description=f'Migrate {TABLE_NAME} table from MySQL to PostgreSQL')
