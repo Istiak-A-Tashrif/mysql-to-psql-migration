@@ -513,6 +513,12 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
             print(clean_ddl)
             return False
         
+        # Also show any warnings or output from table creation
+        if result.stdout:
+            print(f"🔍 Table creation output: {result.stdout}")
+        if result.stderr:
+            print(f"⚠️ Table creation warnings: {result.stderr}")
+        
         print(f"✅ Created {pg_table_name} table successfully")
         return True
         
@@ -578,8 +584,8 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
     
     csv_data = '\n'.join(csv_lines)
     
-    # Write to temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+    # Write to temporary file with UTF-8 encoding
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
         f.write(csv_data)
         temp_file = f.name
     
@@ -616,8 +622,8 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
                 if len(fields) > 1:
                     updated_csv_lines.append(fields[1])  # Skip first field (id)
             
-            # Write the updated CSV
-            with open(temp_file, 'w') as f:
+            # Write the updated CSV with UTF-8 encoding
+            with open(temp_file, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(updated_csv_lines))
             
             # Copy updated file to container
@@ -631,7 +637,7 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
             # Write the COPY command to a SQL file to avoid shell escaping issues
             copy_sql = f"COPY {pg_table_name} ({column_list}) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', NULL '');"
             
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as f:
                 f.write(copy_sql)
                 copy_sql_file = f.name
             
@@ -664,7 +670,15 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
         
         if not result or result.returncode != 0:
             print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+            if result:
+                print(f"🔍 Import command stdout: {result.stdout}")
             return False
+        
+        # Also check if there was any output that might indicate issues
+        if result.stdout:
+            print(f"🔍 Import output: {result.stdout}")
+        if result.stderr:
+            print(f"⚠️ Import warnings: {result.stderr}")
         
         print(f"✅ Imported data to {pg_table_name} table successfully")
         return True
