@@ -56,8 +56,11 @@ def get_mysql_table_columns(table_name):
     """Get column information from MySQL table"""
     print(f"🔍 Getting MySQL column info for {table_name}...")
     
-    # Use DESCRIBE which gives more reliable output format
-    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE {table_name};"'
+    # Use DESCRIBE which gives more reliable output format - handle reserved words
+    if table_name == "Lead":
+        cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE `Lead`;"'
+    else:
+        cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE {table_name};"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
@@ -564,150 +567,105 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
         if os.path.exists(temp_file):
             os.unlink(temp_file)
 
-def robust_export_and_import_data(table_name, preserve_case=True, include_id=False):
-    """Robust data export from MySQL and import to PostgreSQL with better error handling"""
+def robust_export_and_import_data(table_name, preserve_case=True, include_id=False, export_only=False):
+    """Robust data export from MySQL and import to PostgreSQL with better error handling. If export_only is True, only export the CSV and return the filename."""
     print(f"🔄 Robust data transfer for {table_name}...")
-    
     # Get column information first
     mysql_columns = get_mysql_table_columns(table_name)
     if not mysql_columns:
         print(f"❌ Failed to get column information for {table_name}")
         return False
-    
-    # Build column list for SELECT
     column_names = [col['name'] for col in mysql_columns]
     if not include_id and 'id' in column_names:
         column_names.remove('id')
-    
-    # Quote column names to handle reserved words
     quoted_columns = [f'`{col}`' for col in column_names]
     select_columns = ', '.join(quoted_columns)
-    
     print(f"📋 Exporting columns: {select_columns}")
-    
-    # Export data with careful handling
-    export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `{table_name}`" -B --skip-column-names --raw'''
+    # Export data with careful handling - handle reserved words
+    if table_name == "Lead":
+        export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `Lead`" -B --skip-column-names --raw'''
+    else:
+        export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `{table_name}`" -B --skip-column-names --raw'''
     result = run_command(export_cmd)
-    
     if not result or result.returncode != 0:
         print(f"❌ Failed to export data: {result.stderr if result else 'No result'}")
         return False
-    
-    # Process the raw data more carefully
     raw_data = result.stdout
     if not raw_data.strip():
         print(f"⚠️ No data found in {table_name}")
         return True  # Empty table is not an error
-    
-    # Split into lines and process each row
     lines = raw_data.splitlines()
     processed_rows = []
-    
     for i, line in enumerate(lines):
         if not line.strip():
             continue
-        
-        # Split by tab and handle each field carefully
         fields = line.split('\t')
-        
-        # Ensure we have the right number of fields
         if len(fields) != len(column_names):
             print(f"⚠️ Row {i+1}: Expected {len(column_names)} fields, got {len(fields)}")
-            # Pad with empty fields if needed
             while len(fields) < len(column_names):
                 fields.append('')
-            # Truncate if too many
             fields = fields[:len(column_names)]
-        
-        # Process each field
         processed_fields = []
         for j, field in enumerate(fields):
-            # Handle NULL values
             if field == 'NULL' or field.strip() == '':
                 processed_fields.append('')
             else:
-                # Clean the field
                 field = field.strip()
-                # Escape quotes and handle special characters
                 field = field.replace('"', '""')
                 field = field.replace('\n', '\\n')
                 field = field.replace('\r', '\\r')
                 field = field.replace('\t', '\\t')
-                # Wrap in quotes if needed
                 if ',' in field or '"' in field or '\n' in field or '\r' in field or '\t' in field:
                     processed_fields.append(f'"{field}"')
                 else:
                     processed_fields.append(field)
-        
         processed_rows.append(','.join(processed_fields))
-    
     if not processed_rows:
         print(f"⚠️ No valid rows found in {table_name}")
         return True
-    
     print(f"📊 Processed {len(processed_rows)} rows from {table_name}")
-    
-    # Write to CSV file
     csv_filename = f'{table_name}_robust_import.csv'
     with open(csv_filename, 'w', encoding='utf-8') as f:
         f.write('\n'.join(processed_rows))
-    
+    if export_only:
+        print(f"✅ Exported robust CSV for {table_name}: {csv_filename}")
+        return csv_filename
     # Copy to PostgreSQL container
     copy_cmd = f'docker cp {csv_filename} postgres_target:/tmp/{csv_filename}'
     result = run_command(copy_cmd)
-    
     if not result or result.returncode != 0:
         print(f"❌ Failed to copy CSV file: {result.stderr if result else 'No result'}")
         return False
-    
-    # Get PostgreSQL table name
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
-    
-    # Build column list for PostgreSQL
     if preserve_case:
         pg_columns = [f'"{col}"' for col in column_names]
     else:
         pg_columns = [col.lower() for col in column_names]
-    
     column_list = ', '.join(pg_columns)
-    
-    # Create COPY command
     copy_sql = f'''COPY {pg_table_name} ({column_list}) FROM '/tmp/{csv_filename}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
-    
-    # Write SQL to file
     sql_filename = f'import_{table_name}_robust.sql'
     with open(sql_filename, 'w', encoding='utf-8') as f:
         f.write(copy_sql)
-    
-    # Copy SQL file to container
     copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
     result = run_command(copy_sql_cmd)
-    
     if not result or result.returncode != 0:
         print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
         return False
-    
-    # Execute import
     import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
     result = run_command(import_cmd)
-    
-    # Clean up files
     cleanup_cmds = [
         f'rm -f {csv_filename}',
         f'rm -f {sql_filename}',
         f'docker exec postgres_target rm -f /tmp/{csv_filename}',
         f'docker exec postgres_target rm -f /tmp/{sql_filename}'
     ]
-    
     for cmd in cleanup_cmds:
         run_command(cmd)
-    
     if not result or result.returncode != 0:
         print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
         if result:
             print(f"🔍 Import stdout: {result.stdout}")
         return False
-    
     print(f"✅ Successfully imported {len(processed_rows)} rows to {pg_table_name}")
     return True
 
@@ -856,111 +814,85 @@ def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack"
 def clean_clientconversationtrack_csv(input_csv, output_csv):
     """Clean the ClientConversationTrack CSV file by fixing malformed rows"""
     print(f"🧹 Cleaning CSV file: {input_csv} -> {output_csv}")
+    import csv
+    from io import StringIO
+    import datetime
     
+    expected_fields = 11
     cleaned_rows = []
     problematic_rows = []
     
     # Default timestamp for NOT NULL fields
     default_timestamp = "2025-01-01 00:00:00"
     
-    with open(input_csv, 'r', encoding='utf-8') as f:
+    # Define NOT NULL fields and their defaults
+    not_null_fields = {
+        8: ('created_at', default_timestamp, 'timestamp'),   # created_at NOT NULL
+        9: ('updated_at', default_timestamp, 'timestamp')    # updated_at NOT NULL
+    }
+    
+    # Define optional timestamp fields that should be validated
+    optional_timestamp_fields = {10}  # send_at
+    
+    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
             
-            # Parse the CSV line
-            import csv
-            from io import StringIO
-            
             try:
+                # Use proper CSV reader to handle complex data
                 reader = csv.reader(StringIO(line))
                 fields = next(reader)
                 
-                # Check if we have the expected number of fields (11)
-                if len(fields) == 11:
-                    # Validate timestamp fields (positions 8, 9, 10)
-                    try:
-                        # Check if created_at (field 8) is a valid timestamp
-                        if fields[8] and fields[8] != '':
-                            # Try to parse as timestamp
-                            import datetime
-                            datetime.datetime.fromisoformat(fields[8].replace('Z', '+00:00'))
-                        
-                        # Check if updated_at (field 9) is a valid timestamp  
-                        if fields[9] and fields[9] != '':
-                            datetime.datetime.fromisoformat(fields[9].replace('Z', '+00:00'))
-                        
-                        # Check if send_at (field 10) is a valid timestamp or empty
-                        if fields[10] and fields[10] != '':
-                            datetime.datetime.fromisoformat(fields[10].replace('Z', '+00:00'))
-                        
-                        cleaned_rows.append(line)
-                    except ValueError:
-                        # Invalid timestamp, try to fix or skip
-                        print(f"⚠️ Row {line_num}: Invalid timestamp in fields 8-10: {fields[8:11]}")
-                        problematic_rows.append((line_num, fields))
-                        
-                        # Try to fix by setting invalid timestamps to defaults
-                        fixed_fields = fields.copy()
-                        # created_at and updated_at are NOT NULL, so use default
-                        if not is_valid_timestamp(fixed_fields[8]):
-                            fixed_fields[8] = default_timestamp
-                        if not is_valid_timestamp(fixed_fields[9]):
-                            fixed_fields[9] = default_timestamp
-                        # send_at can be NULL, so empty is fine
-                        if fixed_fields[10] and not is_valid_timestamp(fixed_fields[10]):
-                            fixed_fields[10] = ''
-                        
-                        # Reconstruct the line
-                        writer = StringIO()
-                        csv_writer = csv.writer(writer)
-                        csv_writer.writerow(fixed_fields)
-                        cleaned_line = writer.getvalue().strip()
-                        cleaned_rows.append(cleaned_line)
-                        
-                else:
-                    print(f"⚠️ Row {line_num}: Expected 11 fields, got {len(fields)}")
-                    problematic_rows.append((line_num, fields))
-                    
-                    # Try to fix by padding or truncating
-                    fixed_fields = fields[:11]  # Truncate if too many
-                    while len(fixed_fields) < 11:  # Pad if too few
-                        fixed_fields.append('')
-                    
-                    # Validate timestamps in fixed fields
-                    # created_at and updated_at are NOT NULL, so use default if invalid
-                    if not is_valid_timestamp(fixed_fields[8]):
-                        fixed_fields[8] = default_timestamp
-                    if not is_valid_timestamp(fixed_fields[9]):
-                        fixed_fields[9] = default_timestamp
-                    # send_at can be NULL, so empty is fine
-                    if fixed_fields[10] and not is_valid_timestamp(fixed_fields[10]):
-                        fixed_fields[10] = ''
-                    
-                    # Reconstruct the line
-                    writer = StringIO()
-                    csv_writer = csv.writer(writer)
-                    csv_writer.writerow(fixed_fields)
-                    cleaned_line = writer.getvalue().strip()
-                    cleaned_rows.append(cleaned_line)
-                    
+                # Ensure correct field count
+                if len(fields) < expected_fields:
+                    fields += [''] * (expected_fields - len(fields))
+                elif len(fields) > expected_fields:
+                    fields = fields[:expected_fields]
+                
+                # Fix NOT NULL fields
+                for idx, (field_name, default_value, field_type) in not_null_fields.items():
+                    if idx < len(fields):
+                        if field_type == 'timestamp':
+                            # Ensure timestamp fields are valid
+                            if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
+                                fields[idx] = default_value
+                
+                # Validate optional timestamp fields
+                for idx in optional_timestamp_fields:
+                    if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
+                        if not is_valid_timestamp(fields[idx]):
+                            fields[idx] = ''  # Set to empty for optional fields
+                
+                # Use proper CSV writer to handle complex data
+                writer = StringIO()
+                csv_writer = csv.writer(writer)
+                csv_writer.writerow(fields)
+                cleaned_line = writer.getvalue().strip()
+                cleaned_rows.append(cleaned_line)
+                
             except Exception as e:
                 print(f"❌ Row {line_num}: Error parsing line: {e}")
-                problematic_rows.append((line_num, [line]))
+                problematic_rows.append((line_num, line))
                 continue
     
-    # Write cleaned CSV
-    with open(output_csv, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(cleaned_rows))
+    # Write cleaned CSV using proper CSV writer
+    with open(output_csv, 'w', encoding='utf-8', newline='') as f:
+        csv_writer = csv.writer(f)
+        for row in cleaned_rows:
+            # Parse the cleaned line back to fields and write properly
+            reader = csv.reader(StringIO(row))
+            fields = next(reader)
+            csv_writer.writerow(fields)
     
     print(f"✅ Cleaned CSV: {len(cleaned_rows)} rows written")
     print(f"⚠️ Problematic rows: {len(problematic_rows)}")
     
     if problematic_rows:
         print("📋 First few problematic rows:")
-        for i, (line_num, fields) in enumerate(problematic_rows[:5]):
-            print(f"  Row {line_num}: {fields}")
+        for i, (line_num, line) in enumerate(problematic_rows[:3]):
+            print(f"  Row {line_num}: {line[:100]}...")
     
     return len(cleaned_rows)
 
@@ -1218,3 +1150,391 @@ def add_primary_key_constraint(table_name, preserve_case=True):
         print(f"⚠️ PRIMARY KEY constraint may already exist for {table_name}")
         # Don't return False here as the constraint might already exist
         return True
+
+def clean_technician_csv(input_csv, output_csv):
+    """Clean the Technician CSV file by fixing malformed rows and ensuring correct field count (15 fields)"""
+    print(f"🧹 Cleaning Technician CSV file: {input_csv} -> {output_csv}")
+    import csv
+    from io import StringIO
+    import datetime
+    
+    expected_fields = 15
+    cleaned_rows = []
+    problematic_rows = []
+    default_timestamp = "2025-01-01 00:00:00"
+    
+    # Define NOT NULL fields and their defaults
+    not_null_fields = {
+        11: ('company_id', '0', 'integer'),  # company_id must be integer
+        13: ('created_at', default_timestamp, 'timestamp'),  # created_at NOT NULL
+        14: ('updated_at', default_timestamp, 'timestamp')   # updated_at NOT NULL
+    }
+    
+    # Define optional timestamp fields that should be validated
+    optional_timestamp_fields = {2, 3, 4}  # assigned_date, date_closed, due
+    
+    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            
+            try:
+                # Use proper CSV reader to handle complex data
+                reader = csv.reader(StringIO(line))
+                fields = next(reader)
+                
+                # Ensure correct field count
+                if len(fields) < expected_fields:
+                    fields += [''] * (expected_fields - len(fields))
+                elif len(fields) > expected_fields:
+                    fields = fields[:expected_fields]
+                
+                # Fix NOT NULL fields
+                for idx, (field_name, default_value, field_type) in not_null_fields.items():
+                    if idx < len(fields):
+                        if field_type == 'integer':
+                            # Ensure integer fields are valid
+                            if not fields[idx] or not fields[idx].strip().isdigit():
+                                fields[idx] = default_value
+                        elif field_type == 'timestamp':
+                            # Ensure timestamp fields are valid
+                            if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
+                                fields[idx] = default_value
+                        elif field_type == 'text':
+                            # Ensure text fields are not empty
+                            if not fields[idx] or fields[idx].strip() == '':
+                                fields[idx] = default_value
+                
+                # Validate optional timestamp fields
+                for idx in optional_timestamp_fields:
+                    if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
+                        if not is_valid_timestamp(fields[idx]):
+                            fields[idx] = ''  # Set to empty for optional fields
+                
+                # Use proper CSV writer to handle complex data
+                writer = StringIO()
+                csv_writer = csv.writer(writer)
+                csv_writer.writerow(fields)
+                cleaned_line = writer.getvalue().strip()
+                cleaned_rows.append(cleaned_line)
+                
+            except Exception as e:
+                print(f"⚠️ Row {line_num}: Malformed row, skipping. Error: {e}")
+                problematic_rows.append((line_num, line))
+                continue
+    
+    # Write cleaned CSV using proper CSV writer
+    with open(output_csv, 'w', encoding='utf-8', newline='') as f:
+        csv_writer = csv.writer(f)
+        for row in cleaned_rows:
+            # Parse the cleaned line back to fields and write properly
+            reader = csv.reader(StringIO(row))
+            fields = next(reader)
+            csv_writer.writerow(fields)
+    
+    print(f"✅ Cleaned Technician CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
+    if problematic_rows:
+        print("📋 First few problematic rows:")
+        for i, (line_num, line) in enumerate(problematic_rows[:3]):
+            print(f"  Row {line_num}: {line[:100]}...")
+    
+    return True
+
+def import_technician_from_csv(table_name="Technician", preserve_case=True):
+    """Dedicated function to import Technician from the processed CSV file"""
+    print(f"🔄 Importing {table_name} from processed CSV file...")
+    input_csv = f'{table_name}_robust_import.csv'
+    cleaned_csv = f'{table_name}_cleaned.csv'
+    if not os.path.exists(input_csv):
+        print(f"❌ CSV file {input_csv} not found")
+        return False
+    if not clean_technician_csv(input_csv, cleaned_csv):
+        print(f"❌ Failed to clean CSV file")
+        return False
+    file_size = os.path.getsize(cleaned_csv)
+    with open(cleaned_csv, 'r', encoding='utf-8') as f:
+        line_count = sum(1 for _ in f)
+    print(f"📊 Cleaned CSV file: {cleaned_csv}")
+    print(f"📊 File size: {file_size} bytes")
+    print(f"📊 Line count: {line_count}")
+    copy_cmd = f'docker cp {cleaned_csv} postgres_target:/tmp/{cleaned_csv}'
+    result = run_command(copy_cmd)
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
+        return False
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    columns = [
+        "id", "user_id", "assigned_date", "date_closed", "due", "amount", "priority", "status", "new_note", "service_id", "invoice_id", "company_id", "invoice_item_id", "created_at", "updated_at"
+    ]
+    pg_columns = [f'"{col}"' for col in columns] if preserve_case else [col.lower() for col in columns]
+    column_list = ', '.join(pg_columns)
+    copy_sql = f'''COPY {pg_table_name} ({column_list}) FROM '/tmp/{cleaned_csv}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
+    sql_filename = f'import_{table_name}_dedicated.sql'
+    with open(sql_filename, 'w', encoding='utf-8') as f:
+        f.write(copy_sql)
+    copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
+    result = run_command(copy_sql_cmd)
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        return False
+    import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
+    print(f"🚀 Executing import command: {import_cmd}")
+    result = run_command(import_cmd)
+    print(f"📊 Import result return code: {result.returncode if result else 'No result'}")
+    if result:
+        print(f"📊 Import stdout: {result.stdout}")
+        print(f"📊 Import stderr: {result.stderr}")
+    cleanup_cmds = [
+        f'rm -f {sql_filename}',
+        f'rm -f {cleaned_csv}',
+        f'docker exec postgres_target rm -f /tmp/{cleaned_csv}',
+        f'docker exec postgres_target rm -f /tmp/{sql_filename}'
+    ]
+    for cmd in cleanup_cmds:
+        run_command(cmd)
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        return False
+    verify_sql = f"SELECT COUNT(*) FROM {pg_table_name};"
+    verify_filename = f'verify_{table_name}.sql'
+    with open(verify_filename, 'w', encoding='utf-8') as f:
+        f.write(verify_sql)
+    verify_cmd = f'docker cp {verify_filename} postgres_target:/tmp/{verify_filename}'
+    copy_result = run_command(verify_cmd)
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy verification file")
+        return False
+    verify_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{verify_filename}'
+    print(f"🔍 Debug: Verification command: {verify_cmd}")
+    verify_result = run_command(verify_cmd)
+    run_command(f'rm -f {verify_filename}')
+    run_command(f'docker exec postgres_target rm -f /tmp/{verify_filename}')
+    if verify_result and verify_result.returncode == 0:
+        lines = verify_result.stdout.strip().split('\n')
+        if len(lines) >= 3:
+            count = lines[2].strip()
+            print(f"✅ Successfully imported data. Row count: {count}")
+            return True
+        else:
+            print(f"❌ Unexpected verification output format: {verify_result.stdout}")
+            return False
+    else:
+        print(f"❌ Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
+        return False
+
+def clean_lead_csv(input_csv, output_csv):
+    """Clean the Lead CSV file by fixing malformed rows and ensuring correct field count (20 fields)"""
+    print(f"🧹 Cleaning Lead CSV file: {input_csv} -> {output_csv}")
+    import csv
+    from io import StringIO
+    import datetime
+    
+    expected_fields = 20
+    cleaned_rows = []
+    problematic_rows = []
+    default_timestamp = "2025-01-01 00:00:00"
+    
+    # Define NOT NULL fields and their defaults
+    not_null_fields = {
+        0: ('id', '0', 'integer'),             # id NOT NULL, default 0
+        1: ('client_name', 'unknown', 'text'), # client_name NOT NULL
+        4: ('vehicle_info', 'unknown', 'text'), # vehicle_info NOT NULL
+        6: ('services', 'unknown', 'text'),    # services NOT NULL
+        7: ('source', 'unknown', 'text'),      # source NOT NULL
+        9: ('company_id', '0', 'integer'),     # company_id must be integer
+        10: ('created_at', default_timestamp, 'timestamp'),  # created_at NOT NULL
+        11: ('updated_at', default_timestamp, 'timestamp'),  # updated_at NOT NULL
+        15: ('isLead', '1', 'boolean'),        # isLead NOT NULL, default true
+        16: ('isQualified', '1', 'boolean'),   # isQualified NOT NULL, default true
+        18: ('isEstimateCreated', '0', 'boolean') # isEstimateCreated NOT NULL, default false
+    }
+    
+    # Define integer fields that should be validated
+    integer_fields = {0, 5, 9, 13, 14, 17}  # id, vehicleId, company_id, column_id, assigned_sales_id, serviceId
+    
+    # Define optional timestamp fields that should be validated
+    optional_timestamp_fields = {12, 19}  # column_changed_at, assigned_date
+    
+    def is_valid_bool(val):
+        return val in ('0', '1', 't', 'f', 'true', 'false', 'True', 'False')
+    
+    def is_valid_integer(val):
+        if not val or val.strip() == '':
+            return False
+        try:
+            int(val.strip())
+            return True
+        except ValueError:
+            return False
+    
+    def fill_not_nulls(fields):
+        for idx, (field_name, default_value, field_type) in not_null_fields.items():
+            if idx < len(fields):
+                if field_type == 'integer':
+                    if not fields[idx] or not is_valid_integer(fields[idx]):
+                        fields[idx] = default_value
+                elif field_type == 'timestamp':
+                    if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
+                        fields[idx] = default_value
+                elif field_type == 'text':
+                    if not fields[idx] or fields[idx].strip() == '':
+                        fields[idx] = default_value
+                elif field_type == 'boolean':
+                    if not is_valid_bool(fields[idx]):
+                        fields[idx] = default_value
+        return fields
+    
+    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
+        lines = list(f)
+    for line_num, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            reader = csv.reader(StringIO(line))
+            fields = next(reader)
+            # Fix field count
+            if len(fields) < expected_fields:
+                fields += [''] * (expected_fields - len(fields))
+            elif len(fields) > expected_fields:
+                fields = fields[:expected_fields]
+            # Fill all NOT NULLs for malformed rows
+            if len(fields) != expected_fields or any((idx < len(fields) and (not fields[idx] or fields[idx].strip() == '')) for idx in not_null_fields):
+                print(f"⚠️ Row {line_num}: Malformed or missing NOT NULLs. Filling defaults. Context:")
+                for ctx in range(max(1, line_num-2), min(len(lines)+1, line_num+3)):
+                    print(f"  Context Row {ctx}: {lines[ctx-1].strip()}")
+                fields = fill_not_nulls(fields)
+            # Validate integer fields
+            for idx in integer_fields:
+                if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
+                    if not is_valid_integer(fields[idx]):
+                        print(f"⚠️ Row {line_num}: Invalid integer in field {idx} (expected integer, got '{fields[idx]}')")
+                        fields[idx] = ''
+            # Validate optional timestamp fields
+            for idx in optional_timestamp_fields:
+                if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
+                    if not is_valid_timestamp(fields[idx]):
+                        fields[idx] = ''
+            # Use proper CSV writer
+            writer = StringIO()
+            csv_writer = csv.writer(writer)
+            csv_writer.writerow(fields)
+            cleaned_line = writer.getvalue().strip()
+            cleaned_rows.append(cleaned_line)
+        except Exception as e:
+            print(f"⚠️ Row {line_num}: Malformed row, skipping. Error: {e}")
+            problematic_rows.append((line_num, line))
+            continue
+    # Write cleaned CSV
+    with open(output_csv, 'w', encoding='utf-8', newline='') as f:
+        csv_writer = csv.writer(f)
+        for row in cleaned_rows:
+            reader = csv.reader(StringIO(row))
+            fields = next(reader)
+            csv_writer.writerow(fields)
+    print(f"✅ Cleaned Lead CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
+    if problematic_rows:
+        print("📋 First few problematic rows:")
+        for i, (line_num, line) in enumerate(problematic_rows[:3]):
+            print(f"  Row {line_num}: {line[:100]}...")
+    print("\n--- First 5 cleaned rows (with field counts) ---")
+    for i, row in enumerate(cleaned_rows[:5]):
+        reader = csv.reader(StringIO(row))
+        fields = next(reader)
+        print(f"Row {i+1}: {fields} (fields: {len(fields)})")
+    print("--- End of sample ---\n")
+    return True
+
+def import_lead_from_csv(table_name="Lead", preserve_case=True):
+    """Dedicated function to import Lead from the processed CSV file"""
+    print(f"🔄 Importing {table_name} from processed CSV file...")
+    input_csv = f'{table_name}_robust_import.csv'
+    cleaned_csv = f'{table_name}_cleaned.csv'
+    if not os.path.exists(input_csv):
+        print(f"❌ CSV file {input_csv} not found")
+        return False
+    if not clean_lead_csv(input_csv, cleaned_csv):
+        print(f"❌ Failed to clean CSV file")
+        return False
+    file_size = os.path.getsize(cleaned_csv)
+    with open(cleaned_csv, 'r', encoding='utf-8') as f:
+        line_count = sum(1 for _ in f)
+    print(f"📊 Cleaned CSV file: {cleaned_csv}")
+    print(f"📊 File size: {file_size} bytes")
+    print(f"📊 Line count: {line_count}")
+    # Print first 5 lines of cleaned CSV
+    print("\n--- First 5 lines of cleaned CSV ---")
+    with open(cleaned_csv, 'r', encoding='utf-8') as f:
+        import csv
+        reader = csv.reader(f)
+        for i, row in enumerate(reader):
+            print(f"Row {i+1}: {row} (fields: {len(row)})")
+            if i >= 4:
+                break
+    print("--- End of sample ---\n")
+    copy_cmd = f'docker cp {cleaned_csv} postgres_target:/tmp/{cleaned_csv}'
+    result = run_command(copy_cmd)
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
+        return False
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    columns = [
+        "id", "client_name", "client_email", "client_phone", "vehicle_info", "vehicleId", "services", "source", "comments", "company_id", "created_at", "updated_at", "column_changed_at", "column_id", "assigned_sales_id", "isLead", "isQualified", "serviceId", "isEstimateCreated", "assigned_date"
+    ]
+    pg_columns = [f'"{col}"' for col in columns] if preserve_case else [col.lower() for col in columns]
+    column_list = ', '.join(pg_columns)
+    copy_sql = f'''COPY {pg_table_name} ({column_list}) FROM '/tmp/{cleaned_csv}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
+    print(f"\n📋 COPY SQL: {copy_sql}\n")
+    sql_filename = f'import_{table_name}_dedicated.sql'
+    with open(sql_filename, 'w', encoding='utf-8') as f:
+        f.write(copy_sql)
+    copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
+    result = run_command(copy_sql_cmd)
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        return False
+    import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
+    print(f"🚀 Executing import command: {import_cmd}")
+    result = run_command(import_cmd)
+    print(f"📊 Import result return code: {result.returncode if result else 'No result'}")
+    if result:
+        print(f"📊 Import stdout: {result.stdout}")
+        print(f"📊 Import stderr: {result.stderr}")
+    cleanup_cmds = [
+        f'rm -f {sql_filename}',
+        f'rm -f {cleaned_csv}',
+        f'docker exec postgres_target rm -f /tmp/{cleaned_csv}',
+        f'docker exec postgres_target rm -f /tmp/{sql_filename}'
+    ]
+    for cmd in cleanup_cmds:
+        run_command(cmd)
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        return False
+    verify_sql = f"SELECT COUNT(*) FROM {pg_table_name};"
+    verify_filename = f'verify_{table_name}.sql'
+    with open(verify_filename, 'w', encoding='utf-8') as f:
+        f.write(verify_sql)
+    verify_cmd = f'docker cp {verify_filename} postgres_target:/tmp/{verify_filename}'
+    copy_result = run_command(verify_cmd)
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy verification file")
+        return False
+    verify_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{verify_filename}'
+    print(f"🔍 Debug: Verification command: {verify_cmd}")
+    verify_result = run_command(verify_cmd)
+    run_command(f'rm -f {verify_filename}')
+    run_command(f'docker exec postgres_target rm -f /tmp/{verify_filename}')
+    if verify_result and verify_result.returncode == 0:
+        lines = verify_result.stdout.strip().split('\n')
+        if len(lines) >= 3:
+            count = lines[2].strip()
+            print(f"✅ Successfully imported data. Row count: {count}")
+            return True
+        else:
+            print(f"❌ Unexpected verification output format: {verify_result.stdout}")
+            return False
+    else:
+        print(f"❌ Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
+        return False

@@ -35,7 +35,9 @@ from table_utils import (
     import_data_to_postgresql,
     add_primary_key_constraint,
     setup_auto_increment_sequence,
-    execute_postgresql_sql
+    execute_postgresql_sql,
+    robust_export_and_import_data,
+    import_technician_from_csv
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -346,29 +348,13 @@ def create_technician_foreign_keys(foreign_keys):
 def import_technician_data_with_constraint_handling():
     """Import Technician data with special handling for constraint issues"""
     print(f"📥 Importing {TABLE_NAME} data...")
-    
-    # Import data using standard process (constraints handled in DDL)
-    data_indicator = export_and_clean_mysql_data(TABLE_NAME)
-    import_result = import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
-    
+    # Export robust CSV only
+    robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True, export_only=True)
+    # Now use the dedicated cleaner/importer
+    import_result = import_technician_from_csv(TABLE_NAME, PRESERVE_MYSQL_CASE)
     if not import_result:
         print("❌ Data import failed")
         return False
-    
-    # Check and report final data count
-    count_result = run_command('docker exec postgres_target psql -U postgres -d target_db -c "SELECT COUNT(*) FROM \\"Technician\\";"')
-    if count_result and count_result.returncode == 0:
-        lines = count_result.stdout.strip().split('\n')
-        for line in lines:
-            if line.strip().isdigit():
-                count = int(line.strip())
-                if count > 0:
-                    print(f"📊 Successfully imported {count} Technician records")
-                else:
-                    print("⚠️ No records imported - checking for constraint issues...")
-                    return False
-                break
-    
     print(f"✅ {TABLE_NAME} data import completed successfully")
     return True
 

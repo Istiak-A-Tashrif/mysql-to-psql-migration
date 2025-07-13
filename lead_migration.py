@@ -35,7 +35,9 @@ from table_utils import (
     import_data_to_postgresql,
     add_primary_key_constraint,
     setup_auto_increment_sequence,
-    execute_postgresql_sql
+    execute_postgresql_sql,
+    robust_export_and_import_data,
+    import_lead_from_csv
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -46,8 +48,8 @@ def get_lead_table_info():
     """Get complete Lead table information from MySQL including constraints"""
     print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
     
-    # Get CREATE TABLE statement
-    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
+    # Get CREATE TABLE statement - handle reserved word "Lead"
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `Lead`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
@@ -332,6 +334,19 @@ def create_lead_foreign_keys(foreign_keys):
     print(f"🎯 {TABLE_NAME} Foreign Keys: {created} created, {skipped} skipped")
     return True
 
+def import_lead_data_with_constraint_handling():
+    """Import Lead data with special handling for constraint issues"""
+    print(f"📥 Importing {TABLE_NAME} data...")
+    # Export robust CSV only
+    robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True, export_only=True)
+    # Now use the dedicated cleaner/importer
+    import_result = import_lead_from_csv(TABLE_NAME, PRESERVE_MYSQL_CASE)
+    if not import_result:
+        print("❌ Data import failed")
+        return False
+    print(f"✅ {TABLE_NAME} data import completed successfully")
+    return True
+
 def main():
     parser = argparse.ArgumentParser(description=f'Migrate {TABLE_NAME} table from MySQL to PostgreSQL')
     parser.add_argument('--phase', choices=['1', '2', '3'], help='Run specific phase')
@@ -360,8 +375,7 @@ def main():
         if not create_lead_table(mysql_ddl):
             success = False
         else:
-            data_indicator = export_and_clean_mysql_data(TABLE_NAME)
-            import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
+            import_lead_data_with_constraint_handling()
             add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
             setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
             print(f"✅ Phase 1 complete for {TABLE_NAME}")
