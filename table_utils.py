@@ -35,7 +35,7 @@ def get_mysql_table_columns(table_name):
     print(f"🔍 Getting MySQL column info for {table_name}...")
     
     # Use DESCRIBE which gives more reliable output format
-    cmd = f'docker exec mysql_source mysql -u root -prootpass -D source_db -e "DESCRIBE {table_name};"'
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE {table_name};"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
@@ -274,7 +274,7 @@ def verify_table_structure(table_name, preserve_case=True):
     print("=" * 70)
     
     # First check if tables exist
-    mysql_exists_cmd = f'docker exec mysql_source mysql -u root -prootpass -D source_db -e "SHOW TABLES LIKE \'{table_name}\';"'
+    mysql_exists_cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW TABLES LIKE \'{table_name}\';"'
     mysql_result = run_command(mysql_exists_cmd)
     
     # Use appropriate table name for PostgreSQL
@@ -335,7 +335,7 @@ def count_table_records(table_name):
     print(f"📊 Counting records in both {table_name} tables...")
     
     # MySQL count
-    mysql_cmd = f'docker exec mysql_source mysql -u root -prootpass -D source_db -e "SELECT COUNT(*) FROM {table_name};"'
+    mysql_cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT COUNT(*) FROM {table_name};"'
     mysql_result = run_command(mysql_cmd)
     
     # PostgreSQL count
@@ -374,7 +374,7 @@ def get_mysql_table_info(table_name):
     """Get complete table information from MySQL including constraints"""
     print(f"🔍 Getting complete table info for {table_name} from MySQL...")
     
-    cmd = f'docker exec mysql_source mysql -u root -prootpass -D source_db -e "SHOW CREATE TABLE `{table_name}`;"'
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{table_name}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
@@ -385,7 +385,7 @@ def get_mysql_table_info(table_name):
 
 def table_exists_mysql(table_name):
     """Check if table exists in MySQL"""
-    cmd = f'docker exec mysql_source mysql -u root -prootpass -D source_db -e "SHOW TABLES LIKE \'{table_name}\';"'
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW TABLES LIKE \'{table_name}\';"'
     result = run_command(cmd)
     return result and result.returncode == 0 and table_name in result.stdout
 
@@ -569,7 +569,7 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, in
     import os
     
     # First, get the data in a format we can use
-    get_data_cmd = f'''docker exec mysql_source mysql -u root -prootpass -D source_db -e "SELECT * FROM {table_name};" -B --skip-column-names'''
+    get_data_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT * FROM {table_name};" -B --skip-column-names'''
     result = run_command(get_data_cmd)
     
     if not result or result.returncode != 0:

@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-User Table Migration Script
-===========================
+Source Table Migration Script
+============================
 
-This script provides a complete 3-phase migration approach specifically for the User table:
+This script provides a complete 3-phase migration approach specifically for the Source table:
 1. Phase 1: Table + Data (without constraints)
 2. Phase 2: Indexes (after data import for performance)
 3. Phase 3: Foreign Keys (after all tables exist)
 
 Features:
 - Preserves MySQL case sensitivity for table and column names
-- Handles User-specific data types and constraints
+- Handles Source-specific data types and constraints
 - Manages foreign key dependencies (Company)
-- Creates appropriate indexes for User table
-- Handles special fields like firstName, lastName, email, etc.
+- Creates appropriate indexes for Source table
 
 Usage: 
-    python user_migration.py --phase=1
-    python user_migration.py --phase=2
-    python user_migration.py --phase=3
-    python user_migration.py --full
-    python user_migration.py --verify
+    python source_migration.py --phase=1
+    python source_migration.py --phase=2
+    python source_migration.py --phase=3
+    python source_migration.py --full
+    python source_migration.py --verify
 """
 
 import re
@@ -39,10 +38,10 @@ from table_utils import (
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
 PRESERVE_MYSQL_CASE = True
-TABLE_NAME = "User"
+TABLE_NAME = "Source"
 
-def get_user_table_info():
-    """Get complete User table information from MySQL including constraints"""
+def get_source_table_info():
+    """Get complete Source table information from MySQL including constraints"""
     print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
@@ -50,64 +49,49 @@ def get_user_table_info():
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get User table structure: {result.stderr if result else 'No result'}")
-        return None, None, None
+        print(f"❌ Failed to get Source table structure: {result.stderr if result else 'No result'}")
+        return None, [], []
+    
+    mysql_ddl = result.stdout
+    
+    # Extract indexes
+    indexes = extract_source_indexes_from_ddl(mysql_ddl)
+    print(f"✅ Found {len(indexes)} indexes for Source table")
+    
+    # Extract foreign keys
+    foreign_keys = extract_source_foreign_keys_from_ddl(mysql_ddl)
+    print(f"✅ Found {len(foreign_keys)} foreign keys for Source table")
+    
+    return mysql_ddl, indexes, foreign_keys
 
-    
-    lines = result.stdout.strip().split('\n')
-    create_statement = None
-    for line in lines[1:]:
-        if 'CREATE TABLE' in line:
-            parts = line.split('\t')
-            if len(parts) >= 2:
-                create_statement = parts[1]
-                break
-    
-    if not create_statement:
-        print("❌ Could not find CREATE TABLE statement for User")
-        return None, None, None
-    
-    # Extract different components
-    indexes = extract_user_indexes_from_ddl(create_statement)
-    foreign_keys = extract_user_foreign_keys_from_ddl(create_statement)
-    
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for User table")
-    return create_statement, indexes, foreign_keys
-
-def extract_user_indexes_from_ddl(ddl):
-    """Extract index definitions from User table MySQL DDL"""
+def extract_source_indexes_from_ddl(ddl):
+    """Extract index definitions from Source table MySQL DDL"""
     indexes = []
     
-    # Find all KEY definitions specific to User table
-    key_patterns = [
-        r'KEY\s+`([^`]+)`\s*\(([^)]+)\)',
-        r'INDEX\s+`([^`]+)`\s*\(([^)]+)\)',
-        r'UNIQUE\s+KEY\s+`([^`]+)`\s*\(([^)]+)\)',
-        r'UNIQUE\s+INDEX\s+`([^`]+)`\s*\(([^)]+)\)'
-    ]
+    # Pattern for KEY definitions
+    key_pattern = r'(?:UNIQUE\s+)?KEY\s+`([^`]+)`\s*\(([^)]+)\)'
     
-    for pattern in key_patterns:
-        matches = re.finditer(pattern, ddl, re.IGNORECASE)
-        for match in matches:
-            index_name = match.group(1)
-            columns = match.group(2)
-            is_unique = 'UNIQUE' in match.group(0).upper()
-            
-            indexes.append({
-                'name': index_name,
-                'columns': columns,
-                'unique': is_unique,
-                'original': match.group(0),
-                'table': 'User'
-            })
+    matches = re.finditer(key_pattern, ddl, re.IGNORECASE)
+    for match in matches:
+        is_unique = 'UNIQUE' in match.group(0).upper()
+        index_name = match.group(1)
+        columns = match.group(2).strip()
+        
+        indexes.append({
+            'name': index_name,
+            'columns': columns,
+            'unique': is_unique,
+            'type': 'UNIQUE' if is_unique else 'INDEX',
+            'table': 'Source'
+        })
     
     return indexes
 
-def extract_user_foreign_keys_from_ddl(ddl):
-    """Extract foreign key definitions from User table MySQL DDL"""
+def extract_source_foreign_keys_from_ddl(ddl):
+    """Extract foreign key definitions from Source table MySQL DDL"""
     foreign_keys = []
     
-    # Pattern for CONSTRAINT FOREIGN KEY specific to User
+    # Pattern for CONSTRAINT FOREIGN KEY specific to Source
     fk_pattern = r'CONSTRAINT\s+`([^`]+)`\s+FOREIGN\s+KEY\s*\(([^)]+)\)\s+REFERENCES\s+`([^`]+)`\s*\(([^)]+)\)(?:\s+ON\s+DELETE\s+(\w+))?(?:\s+ON\s+UPDATE\s+(\w+))?'
     
     matches = re.finditer(fk_pattern, ddl, re.IGNORECASE)
@@ -127,68 +111,21 @@ def extract_user_foreign_keys_from_ddl(ddl):
             'on_delete': on_delete,
             'on_update': on_update,
             'original': match.group(0),
-            'table': 'User'
+            'table': 'Source'
         })
     
     return foreign_keys
 
-def create_user_enum_types():
-    """Create ENUM types for User table before creating the table"""
-    print("🎨 Creating User ENUM types...")
-    
-    enums_to_create = [
-        ("user_provider", ["google", "apple", "email"]),
-        ("user_role", ["admin", "employee"]),
-        ("user_employee_type", ["Admin", "Manager", "Sales", "Technician", "Other"])
-    ]
-    
-    for enum_name, enum_values in enums_to_create:
-        # Format values for PostgreSQL
-        values_str = "', '".join(enum_values)
-        create_enum_sql = f"CREATE TYPE {enum_name} AS ENUM ('{values_str}');"
-        
-        print(f"🎨 Creating ENUM type: {enum_name}")
-        
-        # Write to file
-        sql_file = f"create_{enum_name}_enum.sql"
-        with open(sql_file, "w", encoding="utf-8") as f:
-            f.write(create_enum_sql)
-        
-        # Execute
-        cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_file}'
-        
-        # Copy file to container and execute
-        copy_cmd = f'docker cp "{sql_file}" postgres_target:/tmp/'
-        copy_result = run_command(copy_cmd)
-        if not copy_result or "Error" in str(copy_result):
-            print(f"❌ Failed to copy {sql_file} to container")
-            continue
-            
-        result = run_command(cmd)
-        
-        # Clean up
-        try:
-            os.remove(sql_file)
-        except:
-            pass
-            
-        if result and ("CREATE TYPE" in str(result) or "already exists" in str(result)):
-            print(f"✅ ENUM type {enum_name} created successfully")
-        else:
-            print(f"❌ Failed to create ENUM type {enum_name}: {result}")
-
-def convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
-    """Convert User table MySQL DDL to PostgreSQL DDL with User-specific optimizations and ENUM handling"""
-    print(f"🔄 Converting User table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+def convert_source_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
+    """Convert Source table MySQL DDL to PostgreSQL DDL with Source-specific optimizations"""
+    print(f"🔄 Converting Source table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
     
     # Extract just the column definitions part
-    # Match everything between CREATE TABLE ... ( and the first ) that ends column definitions
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        # Fallback - try to find just the parentheses content
         create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)$', postgres_ddl, re.DOTALL)
     
     if not create_match:
@@ -227,22 +164,7 @@ def convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, p
         # Convert data types
         line = re.sub(r'\bint\b(?!\s+NOT\s+NULL\s*,)', 'INTEGER', line, flags=re.IGNORECASE)
         line = re.sub(r'\bvarchar\(\d+\)', 'VARCHAR', line, flags=re.IGNORECASE)
-        line = re.sub(r'\bdecimal\(\d+,\d+\)', 'DECIMAL', line, flags=re.IGNORECASE)
         line = re.sub(r'\bdatetime\(\d+\)', 'TIMESTAMP', line, flags=re.IGNORECASE)
-        
-        # Handle specific User table ENUMs
-        if 'provider' in line and 'enum(' in line.lower():
-            line = re.sub(r'\benum\([^)]+\)', 'user_provider', line, flags=re.IGNORECASE)
-            line = re.sub(r"DEFAULT 'email'", "DEFAULT 'email'::user_provider", line)
-        elif 'role' in line and 'enum(' in line.lower():
-            line = re.sub(r'\benum\([^)]+\)', 'user_role', line, flags=re.IGNORECASE)
-            line = re.sub(r"DEFAULT 'admin'", "DEFAULT 'admin'::user_role", line)
-        elif '"employeeType"' in line and 'enum(' in line.lower():
-            line = re.sub(r'\benum\([^)]+\)', 'user_employee_type', line, flags=re.IGNORECASE)
-            line = re.sub(r"DEFAULT 'Admin'", "DEFAULT 'Admin'::user_employee_type", line)
-        else:
-            # Fallback for any other enums
-            line = re.sub(r'\benum\([^)]+\)', 'VARCHAR(50)', line, flags=re.IGNORECASE)
         
         # Fix PostgreSQL timestamp defaults
         line = re.sub(r'CURRENT_TIMESTAMP\(\d+\)', 'CURRENT_TIMESTAMP', line, flags=re.IGNORECASE)
@@ -263,15 +185,15 @@ def convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, p
             column_lines.append(line)
     
     # Rebuild the CREATE TABLE statement
-    table_name = '"User"' if preserve_case else 'user'
+    table_name = '"Source"' if preserve_case else 'source'
     postgres_ddl = f"CREATE TABLE {table_name} (\n"
     postgres_ddl += ',\n'.join(f"  {line}" for line in column_lines)
     postgres_ddl += "\n)"
     
     return postgres_ddl
 
-def create_user_indexes(indexes):
-    """Create indexes for User table"""
+def create_source_indexes(indexes):
+    """Create indexes for Source table"""
     if not indexes:
         print(f"ℹ️ No indexes to create for {TABLE_NAME}")
         return True
@@ -298,10 +220,10 @@ def create_user_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f"🔧 Creating User index: {index_name}")
+        print(f"🔧 Creating Source index: {index_name}")
         
         # Write to file and execute
-        sql_file = f"create_user_index_{index_name}.sql"
+        sql_file = f"create_source_index_{index_name}.sql"
         with open(sql_file, "w", encoding="utf-8") as f:
             f.write(create_index_sql)
         
@@ -320,9 +242,9 @@ def create_user_indexes(indexes):
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created User index: {index_name}")
+            print(f"✅ Created Source index: {index_name}")
         else:
-            print(f"❌ Failed to create User index: {index_name}")
+            print(f"❌ Failed to create Source index: {index_name}")
             if result:
                 print(f"   Error: {result.stderr}")
                 print(f"   SQL: {create_index_sql}")
@@ -330,9 +252,9 @@ def create_user_indexes(indexes):
     
     return success
 
-def check_user_referenced_table_exists(ref_table):
-    """Check if referenced table exists in PostgreSQL for User foreign keys"""
-    # User references: Company
+def check_source_referenced_table_exists(ref_table):
+    """Check if referenced table exists in PostgreSQL for Source foreign keys"""
+    # Source references: Company
     table_name = ref_table if PRESERVE_MYSQL_CASE else ref_table.lower()
     cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = \'{table_name}\' AND table_schema = \'public\';"'
     result = run_command(cmd)
@@ -345,8 +267,8 @@ def check_user_referenced_table_exists(ref_table):
             return False
     return False
 
-def create_user_foreign_keys(foreign_keys):
-    """Create foreign keys for User table"""
+def create_source_foreign_keys(foreign_keys):
+    """Create foreign keys for Source table"""
     if not foreign_keys:
         print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
         return True
@@ -360,8 +282,8 @@ def create_user_foreign_keys(foreign_keys):
         ref_table = fk['ref_table']
         
         # Check if referenced table exists
-        if not check_user_referenced_table_exists(ref_table):
-            print(f"⚠️ Skipping User FK {fk['name']}: Referenced table '{ref_table}' does not exist")
+        if not check_source_referenced_table_exists(ref_table):
+            print(f"⚠️ Skipping Source FK {fk['name']}: Referenced table '{ref_table}' does not exist")
             skipped += 1
             continue
         
@@ -393,10 +315,10 @@ REFERENCES {ref_table_name} ({ref_cols})
 ON DELETE {on_delete}
 ON UPDATE {on_update};
 """
-        print(f"🔧 Creating User FK: {constraint_name} -> {ref_table}")
+        print(f"🔧 Creating Source FK: {constraint_name} -> {ref_table}")
         
         # Write to file and execute
-        sql_file = f"create_user_fk_{constraint_name}.sql"
+        sql_file = f"create_source_fk_{constraint_name}.sql"
         with open(sql_file, "w", encoding="utf-8") as f:
             f.write(alter_sql)
         
@@ -415,26 +337,23 @@ ON UPDATE {on_update};
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created User FK: {constraint_name}")
+            print(f"✅ Created Source FK: {constraint_name}")
             created += 1
         else:
-            print(f"❌ Failed to create User FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
+            print(f"❌ Failed to create Source FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
     
-    print(f"🎯 User Foreign Keys: {created} created, {skipped} skipped")
+    print(f"🎯 Source Foreign Keys: {created} created, {skipped} skipped")
     return True
 
-def migrate_user_phase1():
-    """Phase 1: Create User table and import data"""
-    print(f"🚀 Phase 1: Creating User table and importing data")
+def migrate_source_phase1():
+    """Phase 1: Create Source table and import data"""
+    print(f"🚀 Phase 1: Creating Source table and importing data")
     
-    # Step 1: Create ENUM types first
-    create_user_enum_types()
-    
-    mysql_ddl, indexes, foreign_keys = get_user_table_info()
+    mysql_ddl, indexes, foreign_keys = get_source_table_info()
     if not mysql_ddl:
         return False
     
-    postgres_ddl = convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
+    postgres_ddl = convert_source_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
     print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
@@ -461,60 +380,79 @@ def migrate_user_phase1():
     print(f"✅ Phase 1 complete for {TABLE_NAME}")
     return True
 
-def migrate_user_phase2():
-    """Phase 2: Create indexes"""
+def migrate_source_phase2():
+    """Phase 2: Create indexes for Source table"""
     print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
     
-    mysql_ddl, indexes, foreign_keys = get_user_table_info()
+    mysql_ddl, indexes, foreign_keys = get_source_table_info()
     if not mysql_ddl:
         return False
     
-    return create_user_indexes(indexes)
+    return create_source_indexes(indexes)
 
-def migrate_user_phase3():
-    """Phase 3: Create foreign keys"""
+def migrate_source_phase3():
+    """Phase 3: Create foreign keys for Source table"""
     print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
     
-    mysql_ddl, indexes, foreign_keys = get_user_table_info()
+    mysql_ddl, indexes, foreign_keys = get_source_table_info()
     if not mysql_ddl:
         return False
     
-    return create_user_foreign_keys(foreign_keys)
+    return create_source_foreign_keys(foreign_keys)
 
-def verify_user_migration():
-    """Verify User table structure matches between MySQL and PostgreSQL"""
+def migrate_source_full():
+    """Full migration: All phases in sequence"""
+    print(f"🚀 Full Source migration: Running all phases")
+    
+    if not migrate_source_phase1():
+        print(f"❌ Phase 1 failed for {TABLE_NAME}")
+        return False
+    
+    if not migrate_source_phase2():
+        print(f"❌ Phase 2 failed for {TABLE_NAME}")
+        return False
+    
+    if not migrate_source_phase3():
+        print(f"❌ Phase 3 failed for {TABLE_NAME}")
+        return False
+    
+    print(f"🎉 Full Source migration completed successfully!")
+    return True
+
+def verify_source_migration():
+    """Verify Source table migration"""
     print(f"🔍 Verifying table structure for {TABLE_NAME}")
     return verify_table_structure(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
 
 def main():
-    parser = argparse.ArgumentParser(description="Migrate User table from MySQL to PostgreSQL")
-    parser.add_argument("--phase", choices=["1", "2", "3"], help="Run specific migration phase")
-    parser.add_argument("--full", action="store_true", help="Run all phases")
-    parser.add_argument("--verify", action="store_true", help="Verify table structure")
+    """Main entry point for Source migration script"""
+    parser = argparse.ArgumentParser(description=f'Migrate {TABLE_NAME} table from MySQL to PostgreSQL')
+    parser.add_argument('--phase', type=int, choices=[1, 2, 3], help='Run specific migration phase')
+    parser.add_argument('--full', action='store_true', help='Run all migration phases')
+    parser.add_argument('--verify', action='store_true', help='Verify migration results')
     
     args = parser.parse_args()
     
-    if args.verify:
-        success = verify_user_migration()
-    elif args.phase == "1":
-        success = migrate_user_phase1()
-    elif args.phase == "2":
-        success = migrate_user_phase2()
-    elif args.phase == "3":
-        success = migrate_user_phase3()
+    if args.phase == 1:
+        success = migrate_source_phase1()
+    elif args.phase == 2:
+        success = migrate_source_phase2()
+    elif args.phase == 3:
+        success = migrate_source_phase3()
     elif args.full:
-        success = (migrate_user_phase1() and 
-                  migrate_user_phase2() and 
-                  migrate_user_phase3())
+        success = migrate_source_full()
+    elif args.verify:
+        success = verify_source_migration()
     else:
-        parser.print_help()
-        return
+        print("Please specify --phase=1|2|3, --full, or --verify")
+        return 1
     
     if success:
         print("🎉 Operation completed successfully!")
+        return 0
     else:
         print("❌ Operation failed!")
-        exit(1)
+        return 1
 
 if __name__ == "__main__":
-    main()
+    exit(main())

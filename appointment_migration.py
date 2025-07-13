@@ -46,7 +46,7 @@ def get_appointment_table_info():
     print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
-    cmd = f'docker exec mysql_source mysql -u root -prootpass -D source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
