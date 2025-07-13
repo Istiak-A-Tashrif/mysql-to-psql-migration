@@ -564,180 +564,419 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
         if os.path.exists(temp_file):
             os.unlink(temp_file)
 
+def robust_export_and_import_data(table_name, preserve_case=True, include_id=False):
+    """Robust data export from MySQL and import to PostgreSQL with better error handling"""
+    print(f"🔄 Robust data transfer for {table_name}...")
+    
+    # Get column information first
+    mysql_columns = get_mysql_table_columns(table_name)
+    if not mysql_columns:
+        print(f"❌ Failed to get column information for {table_name}")
+        return False
+    
+    # Build column list for SELECT
+    column_names = [col['name'] for col in mysql_columns]
+    if not include_id and 'id' in column_names:
+        column_names.remove('id')
+    
+    # Quote column names to handle reserved words
+    quoted_columns = [f'`{col}`' for col in column_names]
+    select_columns = ', '.join(quoted_columns)
+    
+    print(f"📋 Exporting columns: {select_columns}")
+    
+    # Export data with careful handling
+    export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `{table_name}`" -B --skip-column-names --raw'''
+    result = run_command(export_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to export data: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Process the raw data more carefully
+    raw_data = result.stdout
+    if not raw_data.strip():
+        print(f"⚠️ No data found in {table_name}")
+        return True  # Empty table is not an error
+    
+    # Split into lines and process each row
+    lines = raw_data.splitlines()
+    processed_rows = []
+    
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        
+        # Split by tab and handle each field carefully
+        fields = line.split('\t')
+        
+        # Ensure we have the right number of fields
+        if len(fields) != len(column_names):
+            print(f"⚠️ Row {i+1}: Expected {len(column_names)} fields, got {len(fields)}")
+            # Pad with empty fields if needed
+            while len(fields) < len(column_names):
+                fields.append('')
+            # Truncate if too many
+            fields = fields[:len(column_names)]
+        
+        # Process each field
+        processed_fields = []
+        for j, field in enumerate(fields):
+            # Handle NULL values
+            if field == 'NULL' or field.strip() == '':
+                processed_fields.append('')
+            else:
+                # Clean the field
+                field = field.strip()
+                # Escape quotes and handle special characters
+                field = field.replace('"', '""')
+                field = field.replace('\n', '\\n')
+                field = field.replace('\r', '\\r')
+                field = field.replace('\t', '\\t')
+                # Wrap in quotes if needed
+                if ',' in field or '"' in field or '\n' in field or '\r' in field or '\t' in field:
+                    processed_fields.append(f'"{field}"')
+                else:
+                    processed_fields.append(field)
+        
+        processed_rows.append(','.join(processed_fields))
+    
+    if not processed_rows:
+        print(f"⚠️ No valid rows found in {table_name}")
+        return True
+    
+    print(f"📊 Processed {len(processed_rows)} rows from {table_name}")
+    
+    # Write to CSV file
+    csv_filename = f'{table_name}_robust_import.csv'
+    with open(csv_filename, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(processed_rows))
+    
+    # Copy to PostgreSQL container
+    copy_cmd = f'docker cp {csv_filename} postgres_target:/tmp/{csv_filename}'
+    result = run_command(copy_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy CSV file: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Get PostgreSQL table name
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Build column list for PostgreSQL
+    if preserve_case:
+        pg_columns = [f'"{col}"' for col in column_names]
+    else:
+        pg_columns = [col.lower() for col in column_names]
+    
+    column_list = ', '.join(pg_columns)
+    
+    # Create COPY command
+    copy_sql = f'''COPY {pg_table_name} ({column_list}) FROM '/tmp/{csv_filename}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
+    
+    # Write SQL to file
+    sql_filename = f'import_{table_name}_robust.sql'
+    with open(sql_filename, 'w', encoding='utf-8') as f:
+        f.write(copy_sql)
+    
+    # Copy SQL file to container
+    copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
+    result = run_command(copy_sql_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Execute import
+    import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
+    result = run_command(import_cmd)
+    
+    # Clean up files
+    cleanup_cmds = [
+        f'rm -f {csv_filename}',
+        f'rm -f {sql_filename}',
+        f'docker exec postgres_target rm -f /tmp/{csv_filename}',
+        f'docker exec postgres_target rm -f /tmp/{sql_filename}'
+    ]
+    
+    for cmd in cleanup_cmds:
+        run_command(cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        if result:
+            print(f"🔍 Import stdout: {result.stdout}")
+        return False
+    
+    print(f"✅ Successfully imported {len(processed_rows)} rows to {pg_table_name}")
+    return True
+
 def export_and_clean_mysql_data(table_name):
     """Export data from MySQL with advanced cleaning"""
     print(f"📤 Exporting data from MySQL {table_name} table...")
     
-    # Simple approach: get data and return it directly for processing
-    # We'll modify the import function to handle this differently
-    print(f"✅ Data export configured for {table_name}")
-    return table_name  # Return table name to indicate success
+    # Use the new robust function
+    return robust_export_and_import_data(table_name, preserve_case=True, include_id=False)
 
 def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, include_id=False):
     """Import data to PostgreSQL using direct transfer"""
-    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    # Use the new robust function directly
+    return robust_export_and_import_data(table_name, preserve_case, include_id)
+
+def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack", preserve_case=True):
+    """Dedicated function to import ClientConversationTrack from the processed CSV file"""
+    print(f"🔄 Importing {table_name} from processed CSV file...")
     
-    print(f"📥 Importing data to PostgreSQL {pg_table_name} table...")
+    input_csv = f'{table_name}_processed.csv'
+    cleaned_csv = f'{table_name}_cleaned.csv'
     
-    if not data_indicator:
-        print("❌ No data indicator provided")
+    # Check if CSV file exists
+    if not os.path.exists(input_csv):
+        print(f"❌ CSV file {input_csv} not found")
         return False
     
-    # Use a direct approach: pipe data from MySQL to PostgreSQL
-    print(f"📋 Transferring data directly from MySQL to PostgreSQL...")
+    # Clean the CSV file first
+    if not clean_clientconversationtrack_csv(input_csv, cleaned_csv):
+        print(f"❌ Failed to clean CSV file")
+        return False
     
-    # Create a temporary SQL file for the copy operation
-    import tempfile
-    import os
+    # Get file size and line count
+    file_size = os.path.getsize(cleaned_csv)
+    with open(cleaned_csv, 'r', encoding='utf-8') as f:
+        line_count = sum(1 for _ in f)
     
-    # First, get the data in a format we can use
-    # Use backticks around table name to handle reserved words like "Lead"
-    get_data_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT * FROM `{table_name}`;" -B --skip-column-names'''
-    result = run_command(get_data_cmd)
+    print(f"📊 Cleaned CSV file: {cleaned_csv}")
+    print(f"📊 File size: {file_size} bytes")
+    print(f"📊 Line count: {line_count}")
+    
+    # Copy cleaned CSV to PostgreSQL container
+    copy_cmd = f'docker cp {cleaned_csv} postgres_target:/tmp/{cleaned_csv}'
+    result = run_command(copy_cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to retrieve data: {result.stderr if result else 'No result'}")
+        print(f"❌ Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
         return False
     
-    # Process the data and convert to CSV format
-    lines = result.stdout.strip().split('\n')
-    csv_lines = []
+    # Get PostgreSQL table name
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     
-    for line in lines:
-        if line.strip():
-            # Convert tab-separated to comma-separated, handle quotes
-            fields = line.split('\t')
-            csv_fields = []
-            for field in fields:
-                if field == 'NULL':
-                    csv_fields.append('')
-                else:
-                    # Escape quotes and wrap in quotes if needed
-                    field = field.replace('"', '""')
-                    if ',' in field or '"' in field or '\n' in field:
-                        csv_fields.append(f'"{field}"')
-                    else:
-                        csv_fields.append(field)
-            csv_lines.append(','.join(csv_fields))
+    # Define column list for ClientConversationTrack
+    columns = [
+        "id", "client_id", "email_is_read", "sms_is_read", 
+        "email_is_unread_count", "sms_unread_count", 
+        "email_last_message", "sms_last_message", 
+        "created_at", "updated_at", "send_at"
+    ]
     
-    csv_data = '\n'.join(csv_lines)
+    if preserve_case:
+        pg_columns = [f'"{col}"' for col in columns]
+    else:
+        pg_columns = [col.lower() for col in columns]
     
-    # Write to temporary file with UTF-8 encoding
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
-        f.write(csv_data)
-        temp_file = f.name
+    column_list = ', '.join(pg_columns)
     
-    try:
-        # Copy to PostgreSQL container
-        import_file_name = f'{table_name}_import.csv'
-        copy_cmd = f'docker cp "{temp_file}" postgres_target:/tmp/{import_file_name}'
-        result = run_command(copy_cmd)
-        
-        if not result or result.returncode != 0:
-            print(f"❌ Failed to copy to PostgreSQL container: {result.stderr if result else 'No result'}")
-            return False
-        
-        # Import using COPY command, excluding auto-increment id column
-        # Get column list excluding id
-        # For PostgreSQL information_schema, when tables are created with quotes (case-sensitive),
-        # the table_name is stored with the actual case in information_schema
-        if preserve_case:
-            lookup_table_name = table_name  # Use original case for quoted tables
+    # Create COPY command
+    copy_sql = f'''COPY {pg_table_name} ({column_list}) FROM '/tmp/{cleaned_csv}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
+    
+    # Write SQL to file
+    sql_filename = f'import_{table_name}_dedicated.sql'
+    with open(sql_filename, 'w', encoding='utf-8') as f:
+        f.write(copy_sql)
+    
+    print(f"📋 COPY SQL: {copy_sql}")
+    
+    # Copy SQL file to container
+    copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
+    result = run_command(copy_sql_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Execute import with detailed logging
+    import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
+    print(f"🚀 Executing import command: {import_cmd}")
+    
+    result = run_command(import_cmd)
+    
+    print(f"📊 Import result return code: {result.returncode if result else 'No result'}")
+    if result:
+        print(f"📊 Import stdout: {result.stdout}")
+        print(f"📊 Import stderr: {result.stderr}")
+    
+    # Clean up files
+    cleanup_cmds = [
+        f'rm -f {sql_filename}',
+        f'rm -f {cleaned_csv}',
+        f'docker exec postgres_target rm -f /tmp/{cleaned_csv}',
+        f'docker exec postgres_target rm -f /tmp/{sql_filename}'
+    ]
+    
+    for cmd in cleanup_cmds:
+        run_command(cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Verify import
+    verify_sql = f"SELECT COUNT(*) FROM {pg_table_name};"
+    verify_filename = f'verify_{table_name}.sql'
+    with open(verify_filename, 'w', encoding='utf-8') as f:
+        f.write(verify_sql)
+    
+    verify_cmd = f'docker cp {verify_filename} postgres_target:/tmp/{verify_filename}'
+    copy_result = run_command(verify_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy verification file")
+        return False
+    
+    verify_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{verify_filename}'
+    print(f"🔍 Debug: Verification command: {verify_cmd}")
+    verify_result = run_command(verify_cmd)
+    
+    # Clean up verification file
+    run_command(f'rm -f {verify_filename}')
+    run_command(f'docker exec postgres_target rm -f /tmp/{verify_filename}')
+    
+    if verify_result and verify_result.returncode == 0:
+        lines = verify_result.stdout.strip().split('\n')
+        if len(lines) >= 3:
+            count = lines[2].strip()  # Line 3 (index 2) contains the count
+            print(f"✅ Successfully imported data. Row count: {count}")
+            return True
         else:
-            lookup_table_name = table_name.lower()  # Use lowercase for unquoted tables
-        print(f"🔍 Debug: table_name={table_name}, preserve_case={preserve_case}, lookup_table_name={lookup_table_name}, pg_table_name={pg_table_name}")
-        # Get column list - include or exclude id based on parameter
-        id_filter = "" if include_id else " AND column_name != 'id'"
-        get_columns_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT column_name FROM information_schema.columns WHERE table_name = \'{lookup_table_name}\'{id_filter} ORDER BY ordinal_position;"'
-        print(f"🔍 Debug: get_columns_cmd={get_columns_cmd}")
-        col_result = run_command(get_columns_cmd)
-        
-        if col_result and col_result.returncode == 0:
-            columns = [col.strip() for col in col_result.stdout.strip().split('\n') if col.strip()]
-            if preserve_case:
-                # Quote each column name for case sensitivity
-                columns = [f'"{col}"' for col in columns]
-            column_list = ', '.join(columns)
+            print(f"❌ Unexpected verification output format: {verify_result.stdout}")
+            return False
+    else:
+        print(f"❌ Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
+        return False
+
+def clean_clientconversationtrack_csv(input_csv, output_csv):
+    """Clean the ClientConversationTrack CSV file by fixing malformed rows"""
+    print(f"🧹 Cleaning CSV file: {input_csv} -> {output_csv}")
+    
+    cleaned_rows = []
+    problematic_rows = []
+    
+    # Default timestamp for NOT NULL fields
+    default_timestamp = "2025-01-01 00:00:00"
+    
+    with open(input_csv, 'r', encoding='utf-8') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
             
-            # Modify the data based on include_id parameter
-            updated_csv_lines = []
-            for line in csv_lines:
-                if include_id:
-                    # Include all columns including id
-                    updated_csv_lines.append(line)
-                else:
-                    # Exclude the first column (id)
-                    fields = line.split(',', 1)  # Split only on first comma
-                    if len(fields) > 1:
-                        updated_csv_lines.append(fields[1])  # Skip first field (id)
-            
-            # Write the updated CSV with UTF-8 encoding
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(updated_csv_lines))
-            
-            # Copy updated file to container
-            copy_cmd = f'docker cp "{temp_file}" postgres_target:/tmp/{import_file_name}'
-            result = run_command(copy_cmd)
-            
-            if not result or result.returncode != 0:
-                print(f"❌ Failed to copy updated CSV: {result.stderr if result else 'No result'}")
-                return False
-            
-            # Write the COPY command to a SQL file to avoid shell escaping issues
-            copy_sql = f"COPY {pg_table_name} ({column_list}) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', NULL '');"
-            
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as f:
-                f.write(copy_sql)
-                copy_sql_file = f.name
+            # Parse the CSV line
+            import csv
+            from io import StringIO
             
             try:
-                # Copy SQL file to container
-                copy_sql_cmd = f'docker cp "{copy_sql_file}" postgres_target:/tmp/import_data.sql'
-                result = run_command(copy_sql_cmd)
+                reader = csv.reader(StringIO(line))
+                fields = next(reader)
                 
-                if not result or result.returncode != 0:
-                    print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
-                    return False
-                
-                # Execute the SQL file
-                import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_data.sql'
-                print(f"🔍 Debug: Final import command: {import_cmd}")
-                print(f"🔍 Debug: SQL content: {copy_sql}")
-            finally:
-                # Clean up SQL file
-                try:
-                    if os.path.exists(copy_sql_file):
-                        os.unlink(copy_sql_file)
-                except:
-                    pass
-        else:
-            # Fallback to direct command
-            import_cmd = f"docker exec postgres_target psql -U postgres -d target_db -c \"COPY {pg_table_name} FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\\\"', NULL '');\""
-            print(f"🔍 Debug: Fallback import command: {import_cmd}")
-        
-        result = run_command(import_cmd)
-        
-        if not result or result.returncode != 0:
-            print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
-            if result:
-                print(f"🔍 Import command stdout: {result.stdout}")
-            return False
-        
-        # Also check if there was any output that might indicate issues
-        if result.stdout:
-            print(f"🔍 Import output: {result.stdout}")
-        if result.stderr:
-            print(f"⚠️ Import warnings: {result.stderr}")
-        
-        print(f"✅ Imported data to {pg_table_name} table successfully")
+                # Check if we have the expected number of fields (11)
+                if len(fields) == 11:
+                    # Validate timestamp fields (positions 8, 9, 10)
+                    try:
+                        # Check if created_at (field 8) is a valid timestamp
+                        if fields[8] and fields[8] != '':
+                            # Try to parse as timestamp
+                            import datetime
+                            datetime.datetime.fromisoformat(fields[8].replace('Z', '+00:00'))
+                        
+                        # Check if updated_at (field 9) is a valid timestamp  
+                        if fields[9] and fields[9] != '':
+                            datetime.datetime.fromisoformat(fields[9].replace('Z', '+00:00'))
+                        
+                        # Check if send_at (field 10) is a valid timestamp or empty
+                        if fields[10] and fields[10] != '':
+                            datetime.datetime.fromisoformat(fields[10].replace('Z', '+00:00'))
+                        
+                        cleaned_rows.append(line)
+                    except ValueError:
+                        # Invalid timestamp, try to fix or skip
+                        print(f"⚠️ Row {line_num}: Invalid timestamp in fields 8-10: {fields[8:11]}")
+                        problematic_rows.append((line_num, fields))
+                        
+                        # Try to fix by setting invalid timestamps to defaults
+                        fixed_fields = fields.copy()
+                        # created_at and updated_at are NOT NULL, so use default
+                        if not is_valid_timestamp(fixed_fields[8]):
+                            fixed_fields[8] = default_timestamp
+                        if not is_valid_timestamp(fixed_fields[9]):
+                            fixed_fields[9] = default_timestamp
+                        # send_at can be NULL, so empty is fine
+                        if fixed_fields[10] and not is_valid_timestamp(fixed_fields[10]):
+                            fixed_fields[10] = ''
+                        
+                        # Reconstruct the line
+                        writer = StringIO()
+                        csv_writer = csv.writer(writer)
+                        csv_writer.writerow(fixed_fields)
+                        cleaned_line = writer.getvalue().strip()
+                        cleaned_rows.append(cleaned_line)
+                        
+                else:
+                    print(f"⚠️ Row {line_num}: Expected 11 fields, got {len(fields)}")
+                    problematic_rows.append((line_num, fields))
+                    
+                    # Try to fix by padding or truncating
+                    fixed_fields = fields[:11]  # Truncate if too many
+                    while len(fixed_fields) < 11:  # Pad if too few
+                        fixed_fields.append('')
+                    
+                    # Validate timestamps in fixed fields
+                    # created_at and updated_at are NOT NULL, so use default if invalid
+                    if not is_valid_timestamp(fixed_fields[8]):
+                        fixed_fields[8] = default_timestamp
+                    if not is_valid_timestamp(fixed_fields[9]):
+                        fixed_fields[9] = default_timestamp
+                    # send_at can be NULL, so empty is fine
+                    if fixed_fields[10] and not is_valid_timestamp(fixed_fields[10]):
+                        fixed_fields[10] = ''
+                    
+                    # Reconstruct the line
+                    writer = StringIO()
+                    csv_writer = csv.writer(writer)
+                    csv_writer.writerow(fixed_fields)
+                    cleaned_line = writer.getvalue().strip()
+                    cleaned_rows.append(cleaned_line)
+                    
+            except Exception as e:
+                print(f"❌ Row {line_num}: Error parsing line: {e}")
+                problematic_rows.append((line_num, [line]))
+                continue
+    
+    # Write cleaned CSV
+    with open(output_csv, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(cleaned_rows))
+    
+    print(f"✅ Cleaned CSV: {len(cleaned_rows)} rows written")
+    print(f"⚠️ Problematic rows: {len(problematic_rows)}")
+    
+    if problematic_rows:
+        print("📋 First few problematic rows:")
+        for i, (line_num, fields) in enumerate(problematic_rows[:5]):
+            print(f"  Row {line_num}: {fields}")
+    
+    return len(cleaned_rows)
+
+def is_valid_timestamp(timestamp_str):
+    """Check if a string is a valid timestamp"""
+    if not timestamp_str or timestamp_str == '':
         return True
-        
-    finally:
-        # Clean up temporary file
-        try:
-            os.unlink(temp_file)
-        except:
-            pass
+    
+    try:
+        import datetime
+        # Handle various timestamp formats
+        timestamp_str = timestamp_str.replace('Z', '+00:00')
+        datetime.datetime.fromisoformat(timestamp_str)
+        return True
+    except ValueError:
+        return False
 
 def preserve_mysql_case(name):
     """Preserve MySQL case by quoting identifiers for PostgreSQL"""
