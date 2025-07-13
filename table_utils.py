@@ -569,7 +569,8 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, in
     import os
     
     # First, get the data in a format we can use
-    get_data_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT * FROM {table_name};" -B --skip-column-names'''
+    # Use backticks around table name to handle reserved words like "Lead"
+    get_data_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT * FROM `{table_name}`;" -B --skip-column-names'''
     result = run_command(get_data_cmd)
     
     if not result or result.returncode != 0:
@@ -819,6 +820,103 @@ ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
         return True
     else:
         print(f"❌ Failed to setup sequence for {table_name}")
+        if exec_result:
+            print(f"   Error: {exec_result.stderr}")
+        return False
+
+def setup_varchar_id_sequence(table_name, preserve_case=True):
+    """Setup auto-increment sequence for varchar ID tables (like Invoice)"""
+    print(f"🔧 Setting up varchar ID sequence for {table_name}...")
+    
+    # Get PostgreSQL table name
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Get the maximum numeric ID from the table (for varchar IDs that are numeric)
+    max_id_sql = f"SELECT COALESCE(MAX(CAST(id AS BIGINT)), 0) FROM {pg_table_name} WHERE id ~ '^[0-9]+$';"
+    
+    # Write to file to handle quotes properly
+    with open('get_max_varchar_id.sql', 'w', encoding='utf-8') as f:
+        f.write(max_id_sql)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp get_max_varchar_id.sql postgres_target:/tmp/get_max_varchar_id.sql'
+    copy_result = run_command(copy_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy max varchar ID query file")
+        return False
+    
+    max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_varchar_id.sql'
+    print(f"🔍 Debug: max_varchar_id_cmd={max_id_cmd}")
+    max_result = run_command(max_id_cmd)
+    
+    # Cleanup
+    run_command('rm -f get_max_varchar_id.sql')
+    run_command('docker exec postgres_target rm -f /tmp/get_max_varchar_id.sql')
+    
+    if not max_result or max_result.returncode != 0:
+        print(f"❌ Failed to get max varchar ID for {table_name}")
+        if max_result:
+            print(f"   Error: {max_result.stderr}")
+            print(f"   Return code: {max_result.returncode}")
+        return False
+    
+    try:
+        max_id = int(max_result.stdout.strip())
+        next_id = max_id + 1
+        print(f"📊 Max varchar ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
+    except ValueError:
+        print(f"❌ Could not parse max varchar ID for {table_name}")
+        return False
+    
+    # Create sequence name
+    sequence_name = f"{table_name}_id_seq" if not preserve_case else f'"{table_name}_id_seq"'
+    
+    # Create function to generate next varchar ID and setup sequence
+    sequence_sql = f"""
+-- Create sequence if it doesn't exist
+CREATE SEQUENCE IF NOT EXISTS {sequence_name};
+
+-- Set sequence to start from next available ID
+SELECT setval('{sequence_name}', {next_id});
+
+-- Create function to generate next varchar ID
+CREATE OR REPLACE FUNCTION next_{table_name.lower()}_id()
+RETURNS VARCHAR AS $$
+BEGIN
+    RETURN nextval('{sequence_name}')::VARCHAR;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Set column default to use the function
+ALTER TABLE {pg_table_name} 
+ALTER COLUMN id SET DEFAULT next_{table_name.lower()}_id();
+"""
+    
+    # Write to file and execute
+    with open('setup_varchar_sequence.sql', 'w', encoding='utf-8') as f:
+        f.write(sequence_sql)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp setup_varchar_sequence.sql postgres_target:/tmp/setup_varchar_sequence.sql'
+    copy_result = run_command(copy_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy varchar sequence setup file")
+        return False
+    
+    exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/setup_varchar_sequence.sql'
+    exec_result = run_command(exec_cmd)
+    
+    # Cleanup
+    run_command('rm -f setup_varchar_sequence.sql')
+    run_command('docker exec postgres_target rm -f /tmp/setup_varchar_sequence.sql')
+    
+    if exec_result and exec_result.returncode == 0:
+        print(f"✅ Varchar ID auto-increment sequence setup complete for {table_name}")
+        return True
+    else:
+        print(f"❌ Failed to setup varchar ID sequence for {table_name}")
         if exec_result:
             print(f"   Error: {exec_result.stderr}")
         return False
