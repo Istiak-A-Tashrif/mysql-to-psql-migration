@@ -11,6 +11,7 @@ These functions can be used for any table migration verification.
 
 import subprocess
 import re
+import os
 
 def run_command(command, timeout=60):
     """Run shell command with error handling"""
@@ -464,8 +465,22 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
     print(f"🗑️ Dropping existing {pg_table_name} table if exists...")
     
     # Drop table if exists
-    drop_cmd = f'docker exec postgres_target psql -U postgres -d target_db -c "DROP TABLE IF EXISTS {pg_table_name} CASCADE;"'
+    drop_sql = f"DROP TABLE IF EXISTS {pg_table_name} CASCADE;"
+    
+    # Write to temporary file to handle quotes properly
+    with open('drop_table.sql', 'w', encoding='utf-8') as f:
+        f.write(drop_sql)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp drop_table.sql postgres_target:/tmp/drop_table.sql'
+    run_command(copy_cmd)
+    
+    drop_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/drop_table.sql'
     result = run_command(drop_cmd)
+    
+    # Cleanup
+    run_command('rm -f drop_table.sql')  # Remove local file
+    run_command('docker exec postgres_target rm -f /tmp/drop_table.sql')  # Remove container file
     
     if not result or result.returncode != 0:
         print(f"⚠️ Warning: Could not drop table (might not exist): {result.stderr if result else 'No result'}")
@@ -536,7 +551,7 @@ def export_and_clean_mysql_data(table_name):
     print(f"✅ Data export configured for {table_name}")
     return table_name  # Return table name to indicate success
 
-def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
+def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, include_id=False):
     """Import data to PostgreSQL using direct transfer"""
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     
@@ -601,10 +616,16 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
         
         # Import using COPY command, excluding auto-increment id column
         # Get column list excluding id
-        # For case-sensitive tables, we need to use the actual table name as stored in PostgreSQL
-        lookup_table_name = table_name if preserve_case else table_name.lower()
+        # For PostgreSQL information_schema, when tables are created with quotes (case-sensitive),
+        # the table_name is stored with the actual case in information_schema
+        if preserve_case:
+            lookup_table_name = table_name  # Use original case for quoted tables
+        else:
+            lookup_table_name = table_name.lower()  # Use lowercase for unquoted tables
         print(f"🔍 Debug: table_name={table_name}, preserve_case={preserve_case}, lookup_table_name={lookup_table_name}, pg_table_name={pg_table_name}")
-        get_columns_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT column_name FROM information_schema.columns WHERE table_name = \'{lookup_table_name}\' AND column_name != \'id\' ORDER BY ordinal_position;"'
+        # Get column list - include or exclude id based on parameter
+        id_filter = "" if include_id else " AND column_name != 'id'"
+        get_columns_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT column_name FROM information_schema.columns WHERE table_name = \'{lookup_table_name}\'{id_filter} ORDER BY ordinal_position;"'
         print(f"🔍 Debug: get_columns_cmd={get_columns_cmd}")
         col_result = run_command(get_columns_cmd)
         
@@ -615,12 +636,17 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True):
                 columns = [f'"{col}"' for col in columns]
             column_list = ', '.join(columns)
             
-            # Modify the data to exclude the first column (id)
+            # Modify the data based on include_id parameter
             updated_csv_lines = []
             for line in csv_lines:
-                fields = line.split(',', 1)  # Split only on first comma
-                if len(fields) > 1:
-                    updated_csv_lines.append(fields[1])  # Skip first field (id)
+                if include_id:
+                    # Include all columns including id
+                    updated_csv_lines.append(line)
+                else:
+                    # Exclude the first column (id)
+                    fields = line.split(',', 1)  # Split only on first comma
+                    if len(fields) > 1:
+                        updated_csv_lines.append(fields[1])  # Skip first field (id)
             
             # Write the updated CSV with UTF-8 encoding
             with open(temp_file, 'w', encoding='utf-8') as f:
@@ -707,3 +733,129 @@ def get_postgresql_column_name(mysql_column_name, preserve_case=True):
         return preserve_mysql_case(mysql_column_name)
     else:
         return mysql_column_name.lower()
+
+def setup_auto_increment_sequence(table_name, preserve_case=True):
+    """Setup auto-increment sequence for a table with preserved MySQL IDs"""
+    print(f"🔧 Setting up auto-increment sequence for {table_name}...")
+    
+    # Get PostgreSQL table name
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Get the maximum ID from the table
+    max_id_sql = f"SELECT COALESCE(MAX(id), 0) FROM {pg_table_name};"
+    
+    # Write to file to handle quotes properly
+    with open('get_max_id.sql', 'w', encoding='utf-8') as f:
+        f.write(max_id_sql)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp get_max_id.sql postgres_target:/tmp/get_max_id.sql'
+    copy_result = run_command(copy_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy max ID query file")
+        return False
+    
+    max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_id.sql'
+    print(f"🔍 Debug: max_id_cmd={max_id_cmd}")
+    max_result = run_command(max_id_cmd)
+    
+    # Cleanup
+    run_command('rm -f get_max_id.sql')
+    run_command('docker exec postgres_target rm -f /tmp/get_max_id.sql')
+    
+    if not max_result or max_result.returncode != 0:
+        print(f"❌ Failed to get max ID for {table_name}")
+        if max_result:
+            print(f"   Error: {max_result.stderr}")
+            print(f"   Return code: {max_result.returncode}")
+        return False
+    
+    try:
+        max_id = int(max_result.stdout.strip())
+        next_id = max_id + 1
+        print(f"📊 Max ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
+    except ValueError:
+        print(f"❌ Could not parse max ID for {table_name}")
+        return False
+    
+    # Create sequence name
+    sequence_name = f"{table_name}_id_seq" if not preserve_case else f'"{table_name}_id_seq"'
+    
+    # Create and setup sequence
+    sequence_sql = f"""
+-- Create sequence if it doesn't exist
+CREATE SEQUENCE IF NOT EXISTS {sequence_name};
+
+-- Set sequence to start from next available ID
+SELECT setval('{sequence_name}', {next_id});
+
+-- Set column default to use the sequence
+ALTER TABLE {pg_table_name} 
+ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
+"""
+    
+    # Write to file and execute
+    with open('setup_sequence.sql', 'w', encoding='utf-8') as f:
+        f.write(sequence_sql)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp setup_sequence.sql postgres_target:/tmp/setup_sequence.sql'
+    copy_result = run_command(copy_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy sequence setup file")
+        return False
+    
+    exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/setup_sequence.sql'
+    exec_result = run_command(exec_cmd)
+    
+    # Cleanup
+    run_command('rm -f setup_sequence.sql')
+    run_command('docker exec postgres_target rm -f /tmp/setup_sequence.sql')
+    
+    if exec_result and exec_result.returncode == 0:
+        print(f"✅ Auto-increment sequence setup complete for {table_name}")
+        return True
+    else:
+        print(f"❌ Failed to setup sequence for {table_name}")
+        if exec_result:
+            print(f"   Error: {exec_result.stderr}")
+        return False
+
+def add_primary_key_constraint(table_name, preserve_case=True):
+    """Add PRIMARY KEY constraint to a table"""
+    print(f"🔑 Adding PRIMARY KEY constraint to {table_name}...")
+    
+    # Get PostgreSQL table name
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Add PRIMARY KEY constraint
+    pk_sql = f"ALTER TABLE {pg_table_name} ADD CONSTRAINT {table_name}_pkey PRIMARY KEY (id);"
+    
+    # Write to file and execute
+    with open('add_primary_key.sql', 'w', encoding='utf-8') as f:
+        f.write(pk_sql)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp add_primary_key.sql postgres_target:/tmp/add_primary_key.sql'
+    copy_result = run_command(copy_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy primary key file")
+        return False
+    
+    exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/add_primary_key.sql'
+    exec_result = run_command(exec_cmd)
+    
+    # Cleanup
+    run_command('rm -f add_primary_key.sql')
+    run_command('docker exec postgres_target rm -f /tmp/add_primary_key.sql')
+    
+    if exec_result and exec_result.returncode == 0:
+        print(f"✅ PRIMARY KEY constraint added to {table_name}")
+        return True
+    else:
+        print(f"⚠️ PRIMARY KEY constraint may already exist for {table_name}")
+        # Don't return False here as the constraint might already exist
+        return True

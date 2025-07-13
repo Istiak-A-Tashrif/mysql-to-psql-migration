@@ -75,6 +75,20 @@ Thumbs.db
 *_old.py
 *_temp.py
 
+# Migration temporary files
+debug_*.py
+debug_*.sql
+*_debug.py
+*_debug.sql
+create_*.sql
+add_*.sql
+setup_*.sql
+get_*.sql
+drop_*.sql
+*_temp.csv
+*_import.csv
+*_export.csv
+
 # Project specific
 UTILITIES_ORGANIZATION.md
 README_NEW.md

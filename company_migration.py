@@ -31,7 +31,9 @@ from table_utils import (
     run_command,
     create_postgresql_table,
     export_and_clean_mysql_data,
-    import_data_to_postgresql
+    import_data_to_postgresql,
+    add_primary_key_constraint,
+    setup_auto_increment_sequence
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -135,9 +137,8 @@ def convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False
     
     # Company-specific type mappings
     company_type_mappings = OrderedDict([
-        # Standard mappings
-        (r'\bint\(\d+\)\s+auto_increment\b', 'SERIAL PRIMARY KEY'),
-        (r'\bbigint\(\d+\)\s+auto_increment\b', 'BIGSERIAL PRIMARY KEY'),
+        # Modified: Don't auto-convert id to SERIAL - preserve original IDs
+        (r'\bbigint\(\d+\)\s+auto_increment\b', 'BIGINT'),  # Remove auto-increment, handle manually
         (r'tinyint\(1\)', 'BOOLEAN'),
         (r'tinyint\(\d+\)', 'SMALLINT'),
         (r'smallint\(\d+\)', 'SMALLINT'),
@@ -145,6 +146,7 @@ def convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False
         (r'int\(\d+\)', 'INTEGER'),
         (r'bigint\(\d+\)', 'BIGINT'),
         (r'\btinyint\b(?!\()', 'SMALLINT'),
+        (r'\bint\(\d+\)\s+auto_increment\b', 'INTEGER'),  # Remove auto-increment, preserve original IDs
         (r'\bint\b(?!\()', 'INTEGER'),
         (r'varchar\((\d+)\)', r'VARCHAR(\1)'),
         (r'char\((\d+)\)', r'CHAR(\1)'),
@@ -224,6 +226,12 @@ def convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False
         # Remove trailing comma from last line and close
         if clean_lines[-1].endswith(','):
             clean_lines[-1] = clean_lines[-1][:-1]
+        
+        # Add PRIMARY KEY constraint for id column (for Company table with preserved IDs)
+        if TABLE_NAME == "Company":
+            clean_lines.append(',')
+            clean_lines.append('  PRIMARY KEY ("id")')
+        
         clean_lines.append(')')
         
         postgres_ddl = '\n'.join(clean_lines)
@@ -245,9 +253,9 @@ def convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False
     # Fix auto_increment - convert to SERIAL FIRST
     postgres_ddl = re.sub(r'\s+AUTO_INCREMENT\b', '', postgres_ddl, flags=re.IGNORECASE)
     
-    # Convert ONLY the id column to SERIAL PRIMARY KEY (be very specific)
-    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)int(\s+NOT\s+NULL)', r'\1SERIAL PRIMARY KEY', postgres_ddl, flags=re.IGNORECASE)
-    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)INTEGER(\s+NOT\s+NULL)', r'\1SERIAL PRIMARY KEY', postgres_ddl, flags=re.IGNORECASE)
+    # Convert ONLY the id column but keep it as INTEGER (not SERIAL) to preserve original values
+    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)int(\s+NOT\s+NULL)', r'\1INTEGER\2', postgres_ddl, flags=re.IGNORECASE)
+    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)INTEGER(\s+NOT\s+NULL)', r'\1INTEGER\2', postgres_ddl, flags=re.IGNORECASE)
     
     # Fix timestamp types for Company
     postgres_ddl = re.sub(r'\bTIMESTAMP\(3\)\b', 'TIMESTAMP WITHOUT TIME ZONE', postgres_ddl, flags=re.IGNORECASE)
@@ -459,9 +467,17 @@ def migrate_company_phase1():
     if cleaned_data is None:
         return False
     
-    if not import_data_to_postgresql(TABLE_NAME, cleaned_data, preserve_case=PRESERVE_MYSQL_CASE):
+    if not import_data_to_postgresql(TABLE_NAME, cleaned_data, preserve_case=PRESERVE_MYSQL_CASE, include_id=True):
         return False
+
+    # Add PRIMARY KEY constraint if not exists
+    add_primary_key_constraint(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
     
+    # Setup auto-increment sequence for preserved IDs
+    if not setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
+        print("⚠️ Warning: Could not setup auto-increment sequence")
+        print("⚠️ Warning: Could not setup auto-increment sequence")
+
     print(f"✅ Phase 1 complete for {TABLE_NAME}")
     return True
 

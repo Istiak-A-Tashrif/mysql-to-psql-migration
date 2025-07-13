@@ -32,7 +32,9 @@ from table_utils import (
     run_command,
     create_postgresql_table,
     export_and_clean_mysql_data,
-    import_data_to_postgresql
+    import_data_to_postgresql,
+    add_primary_key_constraint,
+    setup_auto_increment_sequence
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -244,9 +246,9 @@ def convert_appointment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=F
     # Fix auto_increment - convert to SERIAL FIRST
     postgres_ddl = re.sub(r'\s+AUTO_INCREMENT\b', '', postgres_ddl, flags=re.IGNORECASE)
     
-    # Convert ONLY the id column to SERIAL PRIMARY KEY (be very specific)
-    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)int(\s+NOT\s+NULL)', r'\1SERIAL PRIMARY KEY', postgres_ddl, flags=re.IGNORECASE)
-    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)INTEGER(\s+NOT\s+NULL)', r'\1SERIAL PRIMARY KEY', postgres_ddl, flags=re.IGNORECASE)
+    # Convert ONLY the id column to INTEGER NOT NULL (preserve original IDs)
+    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)int(\s+NOT\s+NULL)', r'\1INTEGER NOT NULL', postgres_ddl, flags=re.IGNORECASE)
+    postgres_ddl = re.sub(r'(\s*[`"]id[`"]?\s+)INTEGER(\s+NOT\s+NULL)', r'\1INTEGER NOT NULL', postgres_ddl, flags=re.IGNORECASE)
     
     # Fix timestamp types for Appointment
     postgres_ddl = re.sub(r'\bTIMESTAMP\(3\)\b', 'TIMESTAMP WITHOUT TIME ZONE', postgres_ddl, flags=re.IGNORECASE)
@@ -452,9 +454,16 @@ def migrate_appointment_phase1():
     if cleaned_data is None:
         return False
     
-    if not import_data_to_postgresql(TABLE_NAME, cleaned_data, preserve_case=PRESERVE_MYSQL_CASE):
+    if not import_data_to_postgresql(TABLE_NAME, cleaned_data, preserve_case=PRESERVE_MYSQL_CASE, include_id=True):
         return False
+
+    # Add PRIMARY KEY constraint if not exists
+    add_primary_key_constraint(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
     
+    # Setup auto-increment sequence for preserved IDs
+    if not setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
+        print("⚠️ Warning: Could not setup auto-increment sequence")
+
     print(f"✅ Phase 1 complete for {TABLE_NAME}")
     return True
 
