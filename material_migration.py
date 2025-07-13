@@ -264,7 +264,8 @@ def create_material_indexes(indexes):
         table_name = f'"{TABLE_NAME}"' if PRESERVE_MYSQL_CASE else TABLE_NAME.lower()
         
         # Check if index already exists
-        check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT indexname FROM pg_indexes WHERE tablename = \'{TABLE_NAME}\' AND indexname = \'{index_name}\';"'
+        table_name_for_check = TABLE_NAME if PRESERVE_MYSQL_CASE else TABLE_NAME.lower()
+        check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT indexname FROM pg_indexes WHERE tablename = \'{table_name_for_check}\' AND indexname = \'{index_name}\';"'
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
@@ -275,7 +276,25 @@ def create_material_indexes(indexes):
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
         print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
-        result = run_command(f'docker exec postgres_target psql -U postgres -d target_db -c "{index_sql}"')
+        
+        # Write SQL to file to handle quotes properly
+        with open('create_index.sql', 'w', encoding='utf-8') as f:
+            f.write(index_sql)
+        
+        # Copy and execute
+        copy_cmd = 'docker cp create_index.sql postgres_target:/tmp/create_index.sql'
+        copy_result = run_command(copy_cmd)
+        
+        if not copy_result or copy_result.returncode != 0:
+            print(f"❌ Failed to copy index SQL file")
+            success = False
+            continue
+        
+        result = run_command('docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_index.sql')
+        
+        # Cleanup
+        run_command('rm -f create_index.sql')
+        run_command('docker exec postgres_target rm -f /tmp/create_index.sql')
         
         if result and result.returncode == 0 and "CREATE INDEX" in result.stdout:
             print(f"✅ Created {TABLE_NAME} index: {index['name']}")
@@ -315,7 +334,24 @@ def create_material_foreign_keys(foreign_keys):
         fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_cols}) REFERENCES {ref_table} ({ref_cols}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
         
         print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
-        result = run_command(f'docker exec postgres_target psql -U postgres -d target_db -c "{fk_sql}"')
+        
+        # Write SQL to file to handle quotes properly
+        with open('create_fk.sql', 'w', encoding='utf-8') as f:
+            f.write(fk_sql)
+        
+        # Copy and execute
+        copy_cmd = 'docker cp create_fk.sql postgres_target:/tmp/create_fk.sql'
+        copy_result = run_command(copy_cmd)
+        
+        if not copy_result or copy_result.returncode != 0:
+            print(f"❌ Failed to copy FK SQL file")
+            continue
+        
+        result = run_command('docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_fk.sql')
+        
+        # Cleanup
+        run_command('rm -f create_fk.sql')
+        run_command('docker exec postgres_target rm -f /tmp/create_fk.sql')
         
         if result and result.returncode == 0 and "ALTER TABLE" in result.stdout:
             print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")

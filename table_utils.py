@@ -30,6 +30,28 @@ def run_command(command, timeout=60):
         print(f"Command failed: {str(e)}")
         return None
 
+def execute_postgresql_sql(sql_statement, description="SQL statement"):
+    """Execute a PostgreSQL SQL statement using file-based approach to handle quotes properly"""
+    # Write SQL to file to handle quotes properly
+    with open('temp_sql.sql', 'w', encoding='utf-8') as f:
+        f.write(sql_statement)
+    
+    # Copy and execute
+    copy_cmd = 'docker cp temp_sql.sql postgres_target:/tmp/temp_sql.sql'
+    copy_result = run_command(copy_cmd)
+    
+    if not copy_result or copy_result.returncode != 0:
+        print(f"❌ Failed to copy {description} file")
+        return False, None
+    
+    result = run_command('docker exec postgres_target psql -U postgres -d target_db -f /tmp/temp_sql.sql')
+    
+    # Cleanup
+    run_command('rm -f temp_sql.sql')
+    run_command('docker exec postgres_target rm -f /tmp/temp_sql.sql')
+    
+    return result and result.returncode == 0, result
+
 def get_mysql_table_columns(table_name):
     """Get column information from MySQL table"""
     print(f"🔍 Getting MySQL column info for {table_name}...")
@@ -847,7 +869,7 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
         return False
     
     max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_varchar_id.sql'
-    print(f"🔍 Debug: max_varchar_id_cmd={max_id_cmd}")
+    print(f"🔍 Debug: max_varchar_id_cmd={max_varchar_id_cmd}")
     max_result = run_command(max_id_cmd)
     
     # Cleanup

@@ -34,7 +34,8 @@ from table_utils import (
     export_and_clean_mysql_data,
     import_data_to_postgresql,
     add_primary_key_constraint,
-    setup_auto_increment_sequence
+    setup_auto_increment_sequence,
+    execute_postgresql_sql
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -279,9 +280,9 @@ def create_fleet_indexes(indexes):
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
         print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
-        result = run_command(f'docker exec postgres_target psql -U postgres -d target_db -c "{index_sql}"')
+        success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         
-        if result and result.returncode == 0 and "CREATE INDEX" in result.stdout:
+        if success_flag and result and "CREATE INDEX" in result.stdout:
             print(f"✅ Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
@@ -319,9 +320,9 @@ def create_fleet_foreign_keys(foreign_keys):
         fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_cols}) REFERENCES {ref_table} ({ref_cols}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
         
         print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
-        result = run_command(f'docker exec postgres_target psql -U postgres -d target_db -c "{fk_sql}"')
+        success_flag, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         
-        if result and result.returncode == 0 and "ALTER TABLE" in result.stdout:
+        if success_flag and result and "ALTER TABLE" in result.stdout:
             print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
             created += 1
         else:
