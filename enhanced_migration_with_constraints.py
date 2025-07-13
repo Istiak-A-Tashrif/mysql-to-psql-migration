@@ -26,8 +26,16 @@ from table_utils import (
     get_mysql_table_columns,
     get_postgresql_table_columns,
     normalize_mysql_type,
-    run_command
+    run_command,
+    create_postgresql_table,
+    export_and_clean_mysql_data,
+    import_data_to_postgresql,
+    get_postgresql_table_name,
+    preserve_mysql_case
 )
+
+# Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
+PRESERVE_MYSQL_CASE = True
 
 def get_mysql_table_info(table_name):
     """Get complete table information from MySQL including constraints"""
@@ -117,9 +125,9 @@ def extract_foreign_keys_from_ddl(ddl):
     
     return foreign_keys
 
-def convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=False):
+def convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=False, preserve_case=True):
     """Convert MySQL DDL to PostgreSQL DDL"""
-    print(f"🔄 Converting MySQL DDL to PostgreSQL for {table_name} (constraints: {include_constraints})...")
+    print(f"🔄 Converting MySQL DDL to PostgreSQL for {table_name} (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Type mappings (same as original)
     type_mappings = OrderedDict([
@@ -179,11 +187,48 @@ def convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=F
     postgres_ddl = re.sub(r'\s*AUTO_INCREMENT\s*=\s*\d+', '', postgres_ddl, flags=re.IGNORECASE)
     
     if not include_constraints:
-        # Remove indexes and constraints for phase 1
-        postgres_ddl = re.sub(r',\s*KEY\s+[^,)]+', '', postgres_ddl, flags=re.IGNORECASE)
-        postgres_ddl = re.sub(r',\s*INDEX\s+[^,)]+', '', postgres_ddl, flags=re.IGNORECASE)
-        postgres_ddl = re.sub(r',\s*UNIQUE\s+KEY\s+[^,)]+', '', postgres_ddl, flags=re.IGNORECASE)
-        postgres_ddl = re.sub(r',\s*CONSTRAINT\s+[^,)]+', '', postgres_ddl, flags=re.IGNORECASE)
+        # For phase 1, completely rebuild DDL without constraints
+        # Extract just the column definitions
+        print(f"🔍 Debug: Raw DDL before cleaning:")
+        print(repr(postgres_ddl))
+        
+        lines = postgres_ddl.split('\\n')  # Handle escaped newlines
+        
+        # Use proper table name based on case preservation
+        target_table_name = f'"{table_name}"' if preserve_case else table_name.lower()
+        clean_lines = [f'CREATE TABLE {target_table_name} (']
+        
+        for line in lines:
+            line = line.strip()
+            print(f"🔍 Debug: Processing line: {repr(line)}")
+            
+            # Skip constraint, key, and index lines, but keep column definitions
+            if (line.startswith('KEY ') or 
+                line.startswith('INDEX ') or 
+                line.startswith('CONSTRAINT ') or
+                line.startswith('UNIQUE KEY ') or
+                line.startswith('PRIMARY KEY (') or
+                line.startswith('CREATE TABLE') or
+                line.startswith(')') or
+                not line):
+                print(f"🔍 Debug: Skipping line: {line}")
+                continue
+            
+            # This is a column definition if it doesn't start with constraint keywords
+            if not any(line.upper().startswith(kw) for kw in ['KEY ', 'INDEX ', 'CONSTRAINT ', 'FOREIGN ', 'UNIQUE ']):
+                # Clean up the line - ensure proper comma
+                clean_line = line.rstrip(',').strip()
+                clean_lines.append('  ' + clean_line + ',')
+                print(f"🔍 Debug: Added column line: {clean_line}")
+        
+        # Remove trailing comma from last line and close
+        if clean_lines[-1].endswith(','):
+            clean_lines[-1] = clean_lines[-1][:-1]
+        clean_lines.append(')')
+        
+        postgres_ddl = '\n'.join(clean_lines)
+        print(f"🔍 Debug: Final DDL:")
+        print(postgres_ddl)
     
     # Clean up PRIMARY KEY definitions that are already handled by SERIAL
     postgres_ddl = re.sub(r',\s*PRIMARY\s+KEY\s*\([^)]+\)', '', postgres_ddl, flags=re.IGNORECASE)
@@ -191,11 +236,23 @@ def convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=F
     # Remove MySQL table options
     postgres_ddl = re.sub(r'\)\s*[A-Z_=\s\w\d]+$', ')', postgres_ddl, flags=re.IGNORECASE)
     
-    # Remove backticks
-    postgres_ddl = re.sub(r'`([^`]+)`', r'\1', postgres_ddl)
+    # Handle backticks - preserve case if needed
+    if preserve_case:
+        # Convert MySQL backticks to PostgreSQL double quotes to preserve case
+        postgres_ddl = re.sub(r'`([^`]+)`', r'"\1"', postgres_ddl)
+    else:
+        # Remove backticks for case-insensitive mode
+        postgres_ddl = re.sub(r'`([^`]+)`', r'\1', postgres_ddl)
     
-    # Fix auto_increment
+    # Fix auto_increment - convert to SERIAL
     postgres_ddl = re.sub(r'\s+AUTO_INCREMENT\b', '', postgres_ddl, flags=re.IGNORECASE)
+    
+    # Convert id INTEGER NOT NULL to SERIAL PRIMARY KEY
+    postgres_ddl = re.sub(r'\bid\s+INTEGER\s+NOT\s+NULL\b', 'id SERIAL PRIMARY KEY', postgres_ddl, flags=re.IGNORECASE)
+    
+    # Fix timestamp types
+    postgres_ddl = re.sub(r'\bTIMESTAMP\(3\)\b', 'TIMESTAMP WITHOUT TIME ZONE', postgres_ddl, flags=re.IGNORECASE)
+    postgres_ddl = re.sub(r'\bDATETIME\(3\)\b', 'TIMESTAMP WITHOUT TIME ZONE', postgres_ddl, flags=re.IGNORECASE)
     
     # Fix boolean defaults
     postgres_ddl = re.sub(r"DEFAULT\s+'0'", "DEFAULT false", postgres_ddl, flags=re.IGNORECASE)
@@ -209,11 +266,15 @@ def convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=F
     postgres_ddl = re.sub(r',\s*,', ',', postgres_ddl)
     postgres_ddl = re.sub(r',(\s*)\)', r'\1)', postgres_ddl)
     
-    # Convert table name to lowercase
-    table_lower = table_name.lower()
+    # Convert table name appropriately based on case preservation
+    if preserve_case:
+        target_table_name = f'"{table_name}"'
+    else:
+        target_table_name = table_name.lower()
+    
     postgres_ddl = re.sub(
         rf'\bCREATE TABLE {table_name}\b',
-        f'CREATE TABLE {table_lower}',
+        f'CREATE TABLE {target_table_name}',
         postgres_ddl,
         flags=re.IGNORECASE
     )
@@ -358,19 +419,21 @@ def migrate_table_phase1(table_name="Appointment"):
         return False
     
     # Convert DDL without constraints
-    postgres_ddl = convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=False)
+    postgres_ddl = convert_mysql_to_postgresql_ddl(mysql_ddl, table_name, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
-    # Use your existing functions for table creation and data import
-    from complete_appointment_migration import create_postgresql_table, export_and_clean_mysql_data, import_data_to_postgresql
+    print(f"📋 Generated PostgreSQL DDL:")
+    print("=" * 50)
+    print(postgres_ddl)
+    print("=" * 50)
     
-    if not create_postgresql_table(table_name, postgres_ddl):
+    if not create_postgresql_table(table_name, postgres_ddl, preserve_case=PRESERVE_MYSQL_CASE):
         return False
     
     cleaned_data = export_and_clean_mysql_data(table_name)
     if cleaned_data is None:
         return False
     
-    if not import_data_to_postgresql(table_name, cleaned_data):
+    if not import_data_to_postgresql(table_name, cleaned_data, preserve_case=PRESERVE_MYSQL_CASE):
         return False
     
     print(f"✅ Phase 1 complete for {table_name}")
@@ -400,7 +463,7 @@ def migrate_table_phase3(table_name="Appointment"):
 
 def verify_appointment_structure():
     """Verify that the appointment table structure matches between MySQL and PostgreSQL"""
-    return verify_table_structure("Appointment")
+    return verify_table_structure("Appointment", preserve_case=PRESERVE_MYSQL_CASE)
 
 # ...existing code...
 
