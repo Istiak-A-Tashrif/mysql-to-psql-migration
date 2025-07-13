@@ -94,4 +94,4 @@ UTILITIES_ORGANIZATION.md
 README_NEW.md
 *_backup/
 temp/
-./mysql-init
+mysql-init
