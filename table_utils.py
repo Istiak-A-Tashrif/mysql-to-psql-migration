@@ -1162,83 +1162,130 @@ def clean_technician_csv(input_csv, output_csv):
     cleaned_rows = []
     problematic_rows = []
     default_timestamp = "2025-01-01 00:00:00"
+    allowed_priorities = {'Low', 'Medium', 'High'}
     
     # Define NOT NULL fields and their defaults
     not_null_fields = {
-        11: ('company_id', '0', 'integer'),  # company_id must be integer
+        0: ('id', '0', 'integer'),             # id NOT NULL, default 0
+        1: ('user_id', '0', 'integer'),       # user_id NOT NULL, default 0
+        5: ('amount', '0', 'numeric'),        # amount NOT NULL, default 0
+        6: ('priority', 'Low', 'text'),       # priority NOT NULL, default 'Low'
+        7: ('status', 'unknown', 'text'),     # status NOT NULL, default 'unknown'
+        9: ('service_id', '0', 'integer'),    # service_id NOT NULL, default 0
+        11: ('company_id', '0', 'integer'),   # company_id NOT NULL, default 0
         13: ('created_at', default_timestamp, 'timestamp'),  # created_at NOT NULL
         14: ('updated_at', default_timestamp, 'timestamp')   # updated_at NOT NULL
     }
     
+    # Define integer fields that should be validated
+    integer_fields = {0, 1, 9, 11, 12}  # id, user_id, service_id, company_id, invoice_item_id
+    
     # Define optional timestamp fields that should be validated
     optional_timestamp_fields = {2, 3, 4}  # assigned_date, date_closed, due
     
-    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            
-            try:
-                # Use proper CSV reader to handle complex data
-                reader = csv.reader(StringIO(line))
-                fields = next(reader)
-                
-                # Ensure correct field count
-                if len(fields) < expected_fields:
-                    fields += [''] * (expected_fields - len(fields))
-                elif len(fields) > expected_fields:
-                    fields = fields[:expected_fields]
-                
-                # Fix NOT NULL fields
-                for idx, (field_name, default_value, field_type) in not_null_fields.items():
-                    if idx < len(fields):
-                        if field_type == 'integer':
-                            # Ensure integer fields are valid
-                            if not fields[idx] or not fields[idx].strip().isdigit():
-                                fields[idx] = default_value
-                        elif field_type == 'timestamp':
-                            # Ensure timestamp fields are valid
-                            if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
-                                fields[idx] = default_value
-                        elif field_type == 'text':
-                            # Ensure text fields are not empty
-                            if not fields[idx] or fields[idx].strip() == '':
-                                fields[idx] = default_value
-                
-                # Validate optional timestamp fields
-                for idx in optional_timestamp_fields:
-                    if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
-                        if not is_valid_timestamp(fields[idx]):
-                            fields[idx] = ''  # Set to empty for optional fields
-                
-                # Use proper CSV writer to handle complex data
-                writer = StringIO()
-                csv_writer = csv.writer(writer)
-                csv_writer.writerow(fields)
-                cleaned_line = writer.getvalue().strip()
-                cleaned_rows.append(cleaned_line)
-                
-            except Exception as e:
-                print(f"⚠️ Row {line_num}: Malformed row, skipping. Error: {e}")
-                problematic_rows.append((line_num, line))
-                continue
+    def is_valid_bool(val):
+        return val in ('0', '1', 't', 'f', 'true', 'false', 'True', 'False')
     
-    # Write cleaned CSV using proper CSV writer
+    def is_valid_integer(val):
+        if not val or val.strip() == '':
+            return False
+        try:
+            int(val.strip())
+            return True
+        except ValueError:
+            return False
+    
+    def is_valid_numeric(val):
+        if not val or val.strip() == '':
+            return False
+        try:
+            float(val.strip())
+            return True
+        except ValueError:
+            return False
+    
+    def fill_not_nulls(fields):
+        for idx, (field_name, default_value, field_type) in not_null_fields.items():
+            if idx < len(fields):
+                if field_type == 'integer':
+                    if not fields[idx] or not is_valid_integer(fields[idx]):
+                        fields[idx] = default_value
+                elif field_type == 'numeric':
+                    if not fields[idx] or not is_valid_numeric(fields[idx]):
+                        fields[idx] = default_value
+                elif field_type == 'timestamp':
+                    if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
+                        fields[idx] = default_value
+                elif field_type == 'text':
+                    if idx == 6:  # priority
+                        if fields[idx] not in allowed_priorities:
+                            fields[idx] = 'Low'
+                    elif not fields[idx] or fields[idx].strip() == '':
+                        fields[idx] = default_value
+                elif field_type == 'boolean':
+                    if not is_valid_bool(fields[idx]):
+                        fields[idx] = default_value
+        return fields
+    
+    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
+        lines = list(f)
+    for line_num, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            reader = csv.reader(StringIO(line))
+            fields = next(reader)
+            # Fix field count
+            if len(fields) < expected_fields:
+                fields += [''] * (expected_fields - len(fields))
+            elif len(fields) > expected_fields:
+                fields = fields[:expected_fields]
+            # Fill all NOT NULLs for malformed rows
+            if len(fields) != expected_fields or any((idx < len(fields) and (not fields[idx] or fields[idx].strip() == '')) for idx in not_null_fields):
+                print(f"⚠️ Row {line_num}: Malformed or missing NOT NULLs. Filling defaults. Context:")
+                for ctx in range(max(1, line_num-2), min(len(lines)+1, line_num+3)):
+                    print(f"  Context Row {ctx}: {lines[ctx-1].strip()}")
+                fields = fill_not_nulls(fields)
+            # Validate integer fields
+            for idx in integer_fields:
+                if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
+                    if not is_valid_integer(fields[idx]):
+                        print(f"⚠️ Row {line_num}: Invalid integer in field {idx} (expected integer, got '{fields[idx]}')")
+                        fields[idx] = ''
+            # Validate optional timestamp fields
+            for idx in optional_timestamp_fields:
+                if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
+                    if not is_valid_timestamp(fields[idx]):
+                        fields[idx] = ''
+            # Use proper CSV writer
+            writer = StringIO()
+            csv_writer = csv.writer(writer)
+            csv_writer.writerow(fields)
+            cleaned_line = writer.getvalue().strip()
+            cleaned_rows.append(cleaned_line)
+        except Exception as e:
+            print(f"⚠️ Row {line_num}: Malformed row, skipping. Error: {e}")
+            problematic_rows.append((line_num, line))
+            continue
+    # Write cleaned CSV
     with open(output_csv, 'w', encoding='utf-8', newline='') as f:
         csv_writer = csv.writer(f)
         for row in cleaned_rows:
-            # Parse the cleaned line back to fields and write properly
             reader = csv.reader(StringIO(row))
             fields = next(reader)
             csv_writer.writerow(fields)
-    
     print(f"✅ Cleaned Technician CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
     if problematic_rows:
         print("📋 First few problematic rows:")
         for i, (line_num, line) in enumerate(problematic_rows[:3]):
             print(f"  Row {line_num}: {line[:100]}...")
-    
+    print("\n--- First 5 cleaned rows (with field counts) ---")
+    for i, row in enumerate(cleaned_rows[:5]):
+        reader = csv.reader(StringIO(row))
+        fields = next(reader)
+        print(f"Row {i+1}: {fields} (fields: {len(fields)})")
+    print("--- End of sample ---\n")
     return True
 
 def import_technician_from_csv(table_name="Technician", preserve_case=True):
