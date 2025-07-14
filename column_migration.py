@@ -36,6 +36,7 @@ from table_utils import (
     setup_auto_increment_sequence,
     execute_postgresql_sql
 )
+import csv
 
 PRESERVE_MYSQL_CASE = True
 TABLE_NAME = "Column"
@@ -113,6 +114,30 @@ def convert_column_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False,
     
     return postgres_ddl
 
+def get_postgresql_column_table_ddl():
+    return '''
+CREATE TABLE "Column" (
+    "id" INTEGER NOT NULL,
+    "title" VARCHAR NOT NULL,
+    "type" VARCHAR NOT NULL,
+    "order" INTEGER NOT NULL,
+    "textColor" VARCHAR,
+    "bgColor" VARCHAR,
+    "company_id" INTEGER NOT NULL
+);
+'''
+
+def log_csv_preview(csv_filename, num_lines=5):
+    print(f"Preview of {csv_filename} (first {num_lines} lines):")
+    if not os.path.exists(csv_filename):
+        print(f"  File not found: {csv_filename}")
+        return
+    with open(csv_filename, 'r', encoding='utf-8') as f:
+        for i, line in enumerate(f):
+            print(f"  {line.strip()}")
+            if i >= num_lines - 1:
+                break
+
 def main():
     parser = argparse.ArgumentParser(description=f"Migrate {TABLE_NAME} table from MySQL to PostgreSQL")
     parser.add_argument('--phase', type=int, choices=[1,2,3], help='Migration phase (1: table+data, 2: indexes, 3: foreign keys)')
@@ -136,7 +161,7 @@ def main():
     for phase in phases:
         if phase == 1:
             print(f"\n🚦 Phase 1: Creating table and importing data for {TABLE_NAME}...")
-            pg_ddl = convert_column_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
+            pg_ddl = get_postgresql_column_table_ddl()
             create_postgresql_table(TABLE_NAME, pg_ddl, preserve_case=PRESERVE_MYSQL_CASE)
             data_indicator = export_and_clean_mysql_data(TABLE_NAME)
             import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
@@ -154,6 +179,22 @@ def main():
     if args.verify:
         print(f"\n🔍 Verifying {TABLE_NAME} migration...")
         verify_table_structure(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
+
+    # After exporting CSV for Column, log the file and preview
+    csv_filename = 'Column_robust_import.csv'
+    if os.path.exists(csv_filename):
+        with open(csv_filename, 'r', encoding='utf-8') as f:
+            row_count = sum(1 for _ in f)
+        print(f"Exported CSV row count: {row_count}")
+        log_csv_preview(csv_filename)
+    else:
+        print(f"Exported CSV file not found: {csv_filename}")
+    # After import, log the import SQL and any errors
+    import_sql_filename = 'import_Column_robust.sql'
+    if os.path.exists(import_sql_filename):
+        print(f"Import SQL used:")
+        with open(import_sql_filename, 'r', encoding='utf-8') as f:
+            print(f.read())
 
 if __name__ == "__main__":
     main() 

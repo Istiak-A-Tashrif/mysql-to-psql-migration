@@ -55,21 +55,14 @@ def execute_postgresql_sql(sql_statement, description="SQL statement"):
 def get_mysql_table_columns(table_name):
     """Get column information from MySQL table"""
     print(f"Getting MySQL column info for {table_name}...")
-    
-    # Use DESCRIBE which gives more reliable output format - handle reserved words
-    if table_name == "Lead":
-        cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE `Lead`;"'
-    else:
-        cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE {table_name};"'
+    # Always wrap table name in backticks to handle reserved words
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE `{table_name}`;"'
     result = run_command(cmd)
-    
     if not result or result.returncode != 0:
         print(f" Failed to get MySQL columns: {result.stderr if result else 'No result'}")
         return None
-    
     columns = []
     lines = result.stdout.strip().split('\n')
-    
     # Skip the header line and process data rows
     for line in lines[1:]:
         if line.strip() and not line.startswith('Field'):
@@ -78,13 +71,9 @@ def get_mysql_table_columns(table_name):
             if '\t' in line:
                 parts = line.split('\t')
             else:
-                # Fallback to splitting by multiple spaces
                 import re
                 parts = re.split(r'\s{2,}', line.strip())
-            
-            # Filter out empty parts and ensure we have at least 6 parts
             parts = [p.strip() for p in parts if p.strip()]
-            
             if len(parts) >= 6:
                 columns.append({
                     'name': parts[0],
@@ -95,7 +84,6 @@ def get_mysql_table_columns(table_name):
                     'extra': parts[5] if len(parts) > 5 else ''
                 })
             elif len(parts) >= 3:
-                # Handle cases with fewer columns
                 columns.append({
                     'name': parts[0],
                     'type': parts[1],
@@ -104,12 +92,10 @@ def get_mysql_table_columns(table_name):
                     'default': parts[4] if len(parts) > 4 and parts[4] != 'NULL' else None,
                     'extra': parts[5] if len(parts) > 5 else ''
                 })
-    
     print(" Found {len(columns)} MySQL columns")
     if len(columns) == 0:
         print("Debug: Raw MySQL output:")
         print(result.stdout)
-    
     return columns
 
 def get_postgresql_table_columns(table_name, preserve_case=True):
@@ -565,7 +551,6 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
             os.unlink(temp_file)
 
 def robust_export_and_import_data(table_name, preserve_case=True, include_id=False, export_only=False):
-    """Robust data export from MySQL and import to PostgreSQL with better error handling. If export_only is True, only export the CSV and return the filename."""
     print(f" Robust data transfer for {table_name}...")
     # Get column information first
     mysql_columns = get_mysql_table_columns(table_name)
@@ -578,11 +563,7 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
     quoted_columns = [f'`{col}`' for col in column_names]
     select_columns = ', '.join(quoted_columns)
     print(f" Exporting columns: {select_columns}")
-    # Export data with careful handling - handle reserved words
-    if table_name == "Lead":
-        export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `Lead`" -B --skip-column-names --raw'''
-    else:
-        export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `{table_name}`" -B --skip-column-names --raw'''
+    export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `{table_name}`" -B --skip-column-names --raw'''
     result = run_command(export_cmd)
     if not result or result.returncode != 0:
         print(f" Failed to export data: {result.stderr if result else 'No result'}")
@@ -624,6 +605,7 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
     csv_filename = f'{table_name}_robust_import.csv'
     with open(csv_filename, 'w', encoding='utf-8') as f:
         f.write('\n'.join(processed_rows))
+    print(f"CSV file written: {csv_filename} (exists: {os.path.exists(csv_filename)})")
     if export_only:
         print(f" Exported robust CSV for {table_name}: {csv_filename}")
         return csv_filename
@@ -643,6 +625,7 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
     sql_filename = f'import_{table_name}_robust.sql'
     with open(sql_filename, 'w', encoding='utf-8') as f:
         f.write(copy_sql)
+    print(f"Import SQL file written: {sql_filename} (exists: {os.path.exists(sql_filename)})")
     copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
     result = run_command(copy_sql_cmd)
     if not result or result.returncode != 0:
@@ -650,20 +633,14 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
         return False
     import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
     result = run_command(import_cmd)
-    cleanup_cmds = [
-        f'rm -f {csv_filename}',
-        f'rm -f {sql_filename}',
-        f'docker exec postgres_target rm -f /tmp/{csv_filename}',
-        f'docker exec postgres_target rm -f /tmp/{sql_filename}'
-    ]
-    for cmd in cleanup_cmds:
-        run_command(cmd)
     if not result or result.returncode != 0:
         print(f" Failed to import data: {result.stderr if result else 'No result'}")
         if result:
             print(f"Import stdout: {result.stdout}")
         return False
     print(f" Successfully imported {len(processed_rows)} rows to {pg_table_name}")
+    # Do not delete CSV or SQL files until after logging/verification
+    # Cleanup should be done after all diagnostics
     return True
 
 def export_and_clean_mysql_data(table_name):
