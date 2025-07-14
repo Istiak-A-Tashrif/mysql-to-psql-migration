@@ -89,3 +89,5 @@ vehicle_migration.py
 vehiclecolor_migration.py
 vehicleparts_migration.py
 vendor_migration.py
+_usergroups_migration.py
+_prisma_migrations_migration.py

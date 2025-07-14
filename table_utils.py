@@ -2504,3 +2504,58 @@ def fix_marketingautomationrule_with_json_handling(preserve_case=True):
                 os.unlink(temp_sql_path)
         except:
             pass
+
+def import_prisma_migrations_direct():
+    """Import _prisma_migrations data using direct SQL INSERT statements"""
+    import subprocess
+    import re
+    
+    try:
+        print("Importing _prisma_migrations data using direct SQL approach...")
+        
+        # Clear existing data first
+        clear_sql = 'DELETE FROM "_prisma_migrations";'
+        success, _ = execute_postgresql_sql(clear_sql, "Clear _prisma_migrations data")
+        if not success:
+            print("Failed to clear existing _prisma_migrations data")
+            return False
+        
+        # Get data from MySQL and format as INSERT statements
+        mysql_cmd = '''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT CONCAT('INSERT INTO \\"_prisma_migrations\\" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count) VALUES (', QUOTE(id), ', ', QUOTE(checksum), ', ', CASE WHEN finished_at IS NULL THEN 'NULL' ELSE CONCAT('TIMESTAMP ', QUOTE(finished_at)) END, ', ', QUOTE(migration_name), ', ', CASE WHEN logs IS NULL THEN 'NULL' ELSE QUOTE(logs) END, ', ', CASE WHEN rolled_back_at IS NULL THEN 'NULL' ELSE CONCAT('TIMESTAMP ', QUOTE(rolled_back_at)) END, ', TIMESTAMP ', QUOTE(started_at), ', ', applied_steps_count, ');') as sql_stmt FROM _prisma_migrations ORDER BY started_at;" --batch --raw --skip-column-names'''
+        
+        result = run_command(mysql_cmd)
+        
+        if not result or result.returncode != 0:
+            print("Failed to generate INSERT statements from MySQL")
+            return False
+        
+        # Write the SQL statements to file
+        with open('/tmp/_prisma_migrations_inserts.sql', 'w') as f:
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    # Clean up the SQL statement
+                    cleaned_line = line.replace("'NULL'", "NULL")
+                    f.write(cleaned_line + '\n')
+        
+        # Copy SQL file to PostgreSQL container and execute
+        copy_cmd = 'docker cp /tmp/_prisma_migrations_inserts.sql postgres_target:/tmp/_prisma_migrations_inserts.sql'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print("Failed to copy SQL file to PostgreSQL container")
+            return False
+        
+        # Execute the SQL file
+        exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/_prisma_migrations_inserts.sql'
+        result = run_command(exec_cmd)
+        
+        if result and result.returncode == 0:
+            print("Successfully imported _prisma_migrations data using direct SQL")
+            return True
+        else:
+            print(f"Failed to execute SQL inserts: {result.stderr if result else 'Unknown error'}")
+            return False
+            
+    except Exception as e:
+        print(f"Error importing _prisma_migrations data: {e}")
+        return False
