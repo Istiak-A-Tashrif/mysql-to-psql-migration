@@ -1,0 +1,1 @@
+COPY "Tag" ("id", "name", "textColor", "bgColor", "created_at", "updated_at", "company_id", "type") FROM '/tmp/Tag_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

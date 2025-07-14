@@ -1,0 +1,1 @@
+COPY "Service" ("id", "created_at", "updated_at", "name", "description", "from_request", "from_requested_company_id", "category_id", "company_id", "canned") FROM '/tmp/Service_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

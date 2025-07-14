@@ -1,0 +1,1 @@
+COPY "Source" ("id", "name", "company_id", "created_at", "updated_at") FROM '/tmp/Source_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

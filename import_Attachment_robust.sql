@@ -1,0 +1,1 @@
+COPY "Attachment" ("id", "fileName", "fileType", "fileUrl", "fileSize", "messageId", "createdAt", "updated_at") FROM '/tmp/Attachment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

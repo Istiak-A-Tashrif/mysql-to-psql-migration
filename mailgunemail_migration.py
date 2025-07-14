@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MailgunEmail Table Migration Script
-=====================================
+=============================
 
 This script provides a complete 3-phase migration approach specifically for the MailgunEmail table:
 1. Phase 1: Table + Data (without constraints)
@@ -11,8 +11,9 @@ This script provides a complete 3-phase migration approach specifically for the 
 Features:
 - Preserves MySQL case sensitivity for table and column names
 - Handles MailgunEmail-specific data types and constraints
-- Manages foreign key dependencies
+- Manages foreign key dependencies (Company, User, Source, VehicleColor)
 - Creates appropriate indexes for MailgunEmail table
+- Large table with customer/mailgunemail data
 
 Usage: 
     python mailgunemail_migration.py --phase=1
@@ -42,196 +43,302 @@ PRESERVE_MYSQL_CASE = True
 TABLE_NAME = "MailgunEmail"
 
 def get_mailgunemail_table_info():
-    """Get MySQL table information for MailgunEmail"""
-    try:
-        # Get CREATE TABLE statement
-        result = run_command([
-            'docker', 'exec', '-i', 'mysql_source', 
-            'mysql', '-u', 'root', '-prootpass', 'source_db', 
-            '-e', f'SHOW CREATE TABLE `MailgunEmail`;'
-        ])
-        
-        if result.returncode != 0:
-            print(f"Error getting MailgunEmail table structure: {result.stderr}")
-            return None, None, None
-        
-        # Parse CREATE TABLE statement
-        create_table_lines = result.stdout.strip().split('
-')
-        create_table_statement = '
-'.join(create_table_lines[1:])  # Skip header
-        
-        # Extract indexes
-        indexes = []
-        index_result = run_command([
-            'docker', 'exec', '-i', 'mysql_source', 
-            'mysql', '-u', 'root', '-prootpass', 'source_db', 
-            '-e', f'SHOW INDEX FROM `MailgunEmail`;'
-        ])
-        
-        if index_result.returncode == 0:
-            index_lines = index_result.stdout.strip().split('
-')
-            for line in index_lines[1:]:  # Skip header
-                if line.strip():
-                    parts = line.split('	')
-                    if len(parts) >= 5:
-                        index_name = parts[2]
-                        column_name = parts[4]
-                        if index_name != 'PRIMARY':
-                            indexes.append((index_name, column_name))
-        
-        # Extract foreign keys
-        foreign_keys = []
-        fk_result = run_command([
-            'docker', 'exec', '-i', 'mysql_source', 
-            'mysql', '-u', 'root', '-prootpass', 'source_db', 
-            '-e', f"SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = 'source_db' AND TABLE_NAME = 'MailgunEmail'"
-        ])
-        
-        if fk_result.returncode == 0:
-            fk_lines = fk_result.stdout.strip().split('
-')
-            for line in fk_lines[1:]:  # Skip header
-                if line.strip():
-                    parts = line.split('	')
-                    if len(parts) >= 4:
-                        fk_name = parts[0]
-                        column_name = parts[1]
-                        referenced_table = parts[2]
-                        referenced_column = parts[3]
-                        foreign_keys.append((fk_name, column_name, referenced_table, referenced_column))
-        
-        return create_table_statement, indexes, foreign_keys
-        
-    except Exception as e:
-        print(f"Error getting MailgunEmail table info: {e}")
-        return None, None, None
+    """Get complete MailgunEmail table information from MySQL including constraints"""
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
+    
+    # Get CREATE TABLE statement
+    cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
+    result = run_command(cmd)
+    
+    if not result or result.returncode != 0:
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
+        return None, [], []
+    
+    # Extract DDL
+    lines = result.stdout.strip().split("\n")
+    ddl_line = None
+    for line in lines:
+        # Look for lines containing CREATE TABLE (could be in second column)
+        if "CREATE TABLE" in line:
+            # Split by tab and take the part with CREATE TABLE
+            parts = line.split("\t")
+            for part in parts:
+                if "CREATE TABLE" in part:
+                    ddl_line = part
+                    break
+            if ddl_line:
+                break
+    
+    if not ddl_line:
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print("Debug: MySQL output:")
+        print(result.stdout)
+        return None, [], []
+    
+    mysql_ddl = ddl_line.strip()
+    
+    # Extract indexes and foreign keys
+    indexes = extract_mailgunemail_indexes_from_ddl(mysql_ddl)
+    foreign_keys = extract_mailgunemail_foreign_keys_from_ddl(mysql_ddl)
+    
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    return mysql_ddl, indexes, foreign_keys
 
-def convert_mailgunemail_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=True, preserve_case=True):
-    """Convert MySQL DDL to PostgreSQL DDL for MailgunEmail"""
-    try:
-        # Basic conversions
-        postgres_ddl = mysql_ddl
+def extract_mailgunemail_indexes_from_ddl(ddl):
+    """Extract index definitions from MailgunEmail table MySQL DDL"""
+    indexes = []
+    
+    # Pattern for KEY definitions
+    key_pattern = r'(?:UNIQUE\s+)?KEY\s+`([^`]+)`\s*\(([^)]+)\)'
+    
+    matches = re.finditer(key_pattern, ddl, re.IGNORECASE)
+    for match in matches:
+        index_name = match.group(1)
+        columns = match.group(2)
+        is_unique = 'UNIQUE' in match.group(0).upper()
         
-        # Convert MySQL data types to PostgreSQL
-        postgres_ddl = re.sub(r'int', 'INTEGER', postgres_ddl)
-        postgres_ddl = re.sub(r'varchar\([^)]+\)', 'VARCHAR', postgres_ddl)
-        postgres_ddl = re.sub(r'text', 'TEXT', postgres_ddl)
-        postgres_ddl = re.sub(r'datetime', 'TIMESTAMP', postgres_ddl)
-        postgres_ddl = re.sub(r'timestamp', 'TIMESTAMP', postgres_ddl)
-        postgres_ddl = re.sub(r'decimal\([^)]+\)', 'DECIMAL', postgres_ddl)
-        postgres_ddl = re.sub(r'tinyint\(1\)', 'BOOLEAN', postgres_ddl)
-        postgres_ddl = re.sub(r'double', 'DOUBLE PRECISION', postgres_ddl)
-        postgres_ddl = re.sub(r'float', 'REAL', postgres_ddl)
+        indexes.append({
+            'name': index_name,
+            'columns': columns,
+            'unique': is_unique,
+            'original': match.group(0),
+            'table': 'MailgunEmail'
+        })
+    
+    return indexes
+
+def extract_mailgunemail_foreign_keys_from_ddl(ddl):
+    """Extract foreign key definitions from MailgunEmail table MySQL DDL"""
+    foreign_keys = []
+    
+    # Pattern for CONSTRAINT FOREIGN KEY specific to MailgunEmail - handle multi-word actions like "SET NULL"
+    fk_pattern = r'CONSTRAINT\s+`([^`]+)`\s+FOREIGN\s+KEY\s*\(([^)]+)\)\s+REFERENCES\s+`([^`]+)`\s*\(([^)]+)\)(?:\s+ON\s+DELETE\s+([A-Z][A-Z\s]*?)(?=\s+ON|\s*$))?(?:\s+ON\s+UPDATE\s+([A-Z][A-Z\s]*?)(?=\s*$|\s*,))?'
+    
+    matches = re.finditer(fk_pattern, ddl, re.IGNORECASE)
+    for match in matches:
+        constraint_name = match.group(1)
+        local_columns = match.group(2)
+        ref_table = match.group(3)
+        ref_columns = match.group(4)
+        on_delete = match.group(5).strip() if match.group(5) else 'RESTRICT'
+        on_update = match.group(6).strip() if match.group(6) else 'RESTRICT'
         
-        # Convert ENUM to VARCHAR
-        postgres_ddl = re.sub(r'enum\([^)]+\)', 'VARCHAR(50)', postgres_ddl)
-        
-        # Remove MySQL-specific options
-        postgres_ddl = re.sub(r'ENGINE\s*=\s*\w+', '', postgres_ddl)
-        postgres_ddl = re.sub(r'DEFAULT\s+CHARSET\s*=\s*\w+', '', postgres_ddl)
-        postgres_ddl = re.sub(r'COLLATE\s+\w+', '', postgres_ddl)
-        postgres_ddl = re.sub(r'AUTO_INCREMENT\s*=\s*\d+', '', postgres_ddl)
-        
-        # Handle case sensitivity
-        if preserve_case:
-            # Quote table name
-            postgres_ddl = re.sub(r'CREATE TABLE `?MailgunEmail`?', f'CREATE TABLE "MailgunEmail"', postgres_ddl)
-            
-            # Quote column names (basic approach)
-            postgres_ddl = re.sub(r'`([^`]+)`', r'""', postgres_ddl)
-        
-        # Remove constraints if not included
-        if not include_constraints:
-            postgres_ddl = re.sub(r',\s*CONSTRAINT\s+[^,]+', '', postgres_ddl)
-            postgres_ddl = re.sub(r',\s*KEY\s+[^,]+', '', postgres_ddl)
-            postgres_ddl = re.sub(r',\s*INDEX\s+[^,]+', '', postgres_ddl)
-            postgres_ddl = re.sub(r',\s*UNIQUE\s+[^,]+', '', postgres_ddl)
-            postgres_ddl = re.sub(r',\s*FOREIGN KEY\s+[^,]+', '', postgres_ddl)
-        
-        # Clean up extra commas
-        postgres_ddl = re.sub(r',\s*\)', ')', postgres_ddl)
-        
-        return postgres_ddl
-        
-    except Exception as e:
-        print(f"Error converting MailgunEmail DDL: {e}")
+        foreign_keys.append({
+            'name': constraint_name,
+            'local_columns': local_columns,
+            'ref_table': ref_table,
+            'ref_columns': ref_columns,
+            'on_delete': on_delete,
+            'on_update': on_update,
+            'original': match.group(0),
+            'table': 'MailgunEmail'
+        })
+    
+    return foreign_keys
+
+def convert_mailgunemail_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
+    """Convert MailgunEmail table MySQL DDL to PostgreSQL DDL with MailgunEmail-specific optimizations"""
+    print(f" Converting MailgunEmail table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    
+    # Fix literal \n characters to actual newlines first
+    postgres_ddl = mysql_ddl.replace('\\n', '\n')
+    
+    # Extract just the column definitions part
+    create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
+    if not create_match:
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
+    
+    columns_part = create_match.group(1)
+    
+    # Parse individual columns, indexes, and constraints
+    lines = []
+    for line in columns_part.split(',\n'):
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Skip constraints for now if include_constraints is False
+        if not include_constraints and (
+            line.startswith('PRIMARY KEY') or 
+            line.startswith('KEY') or 
+            line.startswith('UNIQUE KEY') or 
+            line.startswith('CONSTRAINT')
+        ):
+            continue
+            
+        # Process column definitions
+        if not (line.startswith('PRIMARY KEY') or line.startswith('KEY') or 
+                line.startswith('UNIQUE KEY') or line.startswith('CONSTRAINT')):
+            # This is a column definition
+            processed_line = process_mailgunemail_column_definition(line, preserve_case)
+            if processed_line:
+                lines.append(processed_line)
+    
+    # Build the PostgreSQL DDL
+    table_name_pg = f'"{TABLE_NAME}"' if preserve_case else TABLE_NAME.lower()
+    postgres_ddl = f"CREATE TABLE {table_name_pg} (\n"
+    postgres_ddl += ",\n".join([f"  {line}" for line in lines])
+    postgres_ddl += "\n)"
+    
+    return postgres_ddl
+
+def process_mailgunemail_column_definition(line, preserve_case):
+    """Process a single column definition for MailgunEmail table"""
+    # Remove backticks and handle MySQL-specific types
+    line = line.replace('`', '"' if preserve_case else '')
+    
+    # MySQL to PostgreSQL type conversions for MailgunEmail
+    conversions = [
+        (r'\btinyint\(1\)\b', 'BOOLEAN'),
+        (r'\btinyint\([^)]+\)\b', 'SMALLINT'),
+        (r'\bsmallint\([^)]+\)\b', 'SMALLINT'),
+        (r'\bmediumint\([^)]+\)\b', 'INTEGER'),
+        (r'\bint\([^)]+\)\b', 'INTEGER'),
+        (r'\bbigint\([^)]+\)\b', 'BIGINT'),
+        (r'\bint\b', 'INTEGER'),
+        (r'\bvarchar\([^)]+\)\b', 'VARCHAR'),
+        (r'\btext\b', 'TEXT'),
+        (r'\blongtext\b', 'TEXT'),
+        (r'\bmediumtext\b', 'TEXT'),
+        (r'\btinytext\b', 'TEXT'),
+        (r'\bdatetime\([^)]+\)\b', 'TIMESTAMP'),
+        (r'\bdatetime\b', 'TIMESTAMP'),
+        (r'\btimestamp\([^)]+\)\b', 'TIMESTAMP'),
+        (r'\btimestamp\b', 'TIMESTAMP'),
+        (r'\bdate\b', 'DATE'),
+        (r'\btime\b', 'TIME'),
+        (r'\bdouble\b', 'DOUBLE PRECISION'),
+        (r'\bfloat\b', 'REAL'),
+        (r'\bdecimal\([^)]+\)\b', 'DECIMAL'),
+        (r'\bjson\b', 'JSON'),
+        (r'\bblob\b', 'BYTEA'),
+        (r'\blongblob\b', 'BYTEA'),
+        (r'\bmediumblob\b', 'BYTEA'),
+        (r'\btinyblob\b', 'BYTEA'),
+    ]
+    
+    for pattern, replacement in conversions:
+        line = re.sub(pattern, replacement, line, flags=re.IGNORECASE)
+    
+    # Additional manual fixes for common issues
+    line = line.replace("tinyint(1)", "BOOLEAN")  # Force tinyint(1) to BOOLEAN
+    line = line.replace("tinyint", "SMALLINT")    # Any other tinyint to SMALLINT
+    
+    # Handle AUTO_INCREMENT
+    line = re.sub(r'\bAUTO_INCREMENT\b', '', line, flags=re.IGNORECASE)
+    
+    # Handle specific MailgunEmail issues: make first_name nullable to handle empty strings
+    if 'first_name' in line and 'NOT NULL' in line:
+        line = line.replace('NOT NULL', '')
+    
+    # Handle varchar length issues: convert notes to TEXT
+    if 'notes' in line and 'varchar' in line:
+        line = re.sub(r'varchar\([^)]+\)', 'TEXT', line)
+    
+    # Handle MySQL DEFAULT expressions
+    line = re.sub(r"DEFAULT\s+CURRENT_TIMESTAMP\(\d*\)", "DEFAULT CURRENT_TIMESTAMP", line, flags=re.IGNORECASE)
+    line = re.sub(r"DEFAULT\s+CURRENT_TIMESTAMP", "DEFAULT CURRENT_TIMESTAMP", line, flags=re.IGNORECASE)
+    
+    # Handle MySQL character set and collation
+    line = re.sub(r'\s+CHARACTER\s+SET\s+[^\s]+', '', line, flags=re.IGNORECASE)
+    line = re.sub(r'\s+COLLATE\s+[^\s]+', '', line, flags=re.IGNORECASE)
+    
+    # Clean up extra whitespace
+    line = re.sub(r'\s+', ' ', line).strip()
+    
+    return line
 
 def create_mailgunemail_table(mysql_ddl):
     """Create MailgunEmail table in PostgreSQL"""
-    try:
-        postgres_ddl = convert_mailgunemail_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
-        
-        if not postgres_ddl:
-            return False
-        
-        print(f"Generated PostgreSQL DDL for {TABLE_NAME}:")
-        print("=" * 50)
-        print(postgres_ddl)
-        print("=" * 50)
-        
-        return create_postgresql_table(TABLE_NAME, postgres_ddl, preserve_case=PRESERVE_MYSQL_CASE)
-        
-    except Exception as e:
-        print(f"Error creating MailgunEmail table: {e}")
+    postgres_ddl = convert_mailgunemail_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
+    if not postgres_ddl:
         return False
+    
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print("=" * 50)
+    print(postgres_ddl)
+    print("=" * 50)
+    
+    return create_postgresql_table(TABLE_NAME, postgres_ddl, PRESERVE_MYSQL_CASE)
 
 def create_mailgunemail_indexes(indexes):
     """Create indexes for MailgunEmail table"""
-    try:
-        if not indexes:
-            print(f"No indexes to create for {TABLE_NAME}")
-            return True
-        
-        print(f"Creating {len(indexes)} indexes for {TABLE_NAME}")
-        
-        for index_name, column_name in indexes:
-            # Skip duplicate indexes
-            if index_name.lower() in ['primary', 'id']:
-                continue
-                
-            index_sql = f'CREATE INDEX "{index_name}" ON "{TABLE_NAME}" ("{column_name}");'
-            print(f"Creating index: {index_sql}")
-            
-            if not execute_postgresql_sql(index_sql):
-                print(f"Warning: Could not create index {index_name}")
-        
+    if not indexes:
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
+    
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    
+    success = True
+    for index in indexes:
+        index_name = f"{TABLE_NAME.lower()}_{index['name']}"
+        columns = index['columns'].replace('`', '"' if PRESERVE_MYSQL_CASE else '')
+        table_name = f'"{TABLE_NAME}"' if PRESERVE_MYSQL_CASE else TABLE_NAME.lower()
         
-    except Exception as e:
-        print(f"Error creating MailgunEmail indexes: {e}")
-        return False
+        # Check if index already exists
+        check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT indexname FROM pg_indexes WHERE tablename = \'{TABLE_NAME}\' AND indexname = \'{index_name}\';"'
+        check_result = run_command(check_cmd)
+        
+        if check_result and check_result.returncode == 0 and check_result.stdout.strip():
+            print(f"⏭️ Skipping existing index: {index_name}")
+            continue
+        
+        unique_clause = "UNIQUE " if index.get('unique', False) else ""
+        index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
+        
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
+        success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
+        
+        if success_flag and result and "CREATE INDEX" in result.stdout:
+            print(f" Created {TABLE_NAME} index: {index['name']}")
+        else:
+            error_msg = result.stderr if result else "No result"
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            success = False
+    
+    return success
 
 def create_mailgunemail_foreign_keys(foreign_keys):
     """Create foreign keys for MailgunEmail table"""
-    try:
-        if not foreign_keys:
-            print(f"No foreign keys to create for {TABLE_NAME}")
-            return True
-        
-        print(f"Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}")
-        
-        for fk_name, column_name, referenced_table, referenced_column in foreign_keys:
-            # Check if referenced table exists
-            check_sql = f'SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{referenced_table.lower()}');'
-            result = execute_postgresql_sql(check_sql, return_result=True)
-            
-            if result and result[0][0]:
-                fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{fk_name}" FOREIGN KEY ("{column_name}") REFERENCES "{referenced_table}" ("{referenced_column}") ON DELETE CASCADE ON UPDATE CASCADE;'
-                print(f"Creating foreign key: {fk_name}")
-                
-                if not execute_postgresql_sql(fk_sql):
-                    print(f"Warning: Could not create foreign key {fk_name}")
-            else:
-                print(f"Warning: Referenced table {referenced_table} does not exist, skipping foreign key {fk_name}")
-        
+    if not foreign_keys:
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
+    
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    
+    created = 0
+    skipped = 0
+    
+    for fk in foreign_keys:
+        constraint_name = f"{TABLE_NAME}_{fk['name']}"
+        local_cols = fk['local_columns'].replace('`', '"')
+        ref_table = f'"{fk["ref_table"]}"' if PRESERVE_MYSQL_CASE else fk['ref_table']
+        ref_cols = fk['ref_columns'].replace('`', '"')
         
-    except Exception as e:
-        print(f"Error creating MailgunEmail foreign keys: {e}")
-        return False
+        # Check if foreign key already exists
+        check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = \'{TABLE_NAME}\' AND constraint_name = \'{constraint_name}\' AND constraint_type = \'FOREIGN KEY\';"'
+        check_result = run_command(check_cmd)
+        
+        if check_result and check_result.returncode == 0 and check_result.stdout.strip():
+            print(f"⏭️ Skipping existing FK: {constraint_name}")
+            skipped += 1
+            continue
+        
+        fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_cols}) REFERENCES {ref_table} ({ref_cols}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
+        
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        success_flag, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
+        
+        if success_flag and result and "ALTER TABLE" in result.stdout:
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
+            created += 1
+        else:
+            error_msg = result.stderr if result else "No result"
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+    
+    print(f" {TABLE_NAME} Foreign Keys: {created} created, {skipped} skipped")
+    return True
 
 def main():
     parser = argparse.ArgumentParser(description=f'Migrate {TABLE_NAME} table from MySQL to PostgreSQL')
@@ -241,7 +348,7 @@ def main():
     args = parser.parse_args()
     
     if args.verify:
-        print(f"Verifying table structure for {TABLE_NAME}")
+        print(f" Verifying table structure for {TABLE_NAME}")
         verify_table_structure(TABLE_NAME, PRESERVE_MYSQL_CASE)
         return
     
@@ -257,7 +364,7 @@ def main():
     success = True
     
     if args.phase == '1' or args.full:
-        print(f"Phase 1: Creating {TABLE_NAME} table and importing data")
+        print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
         if not create_mailgunemail_table(mysql_ddl):
             success = False
         else:
@@ -265,22 +372,22 @@ def main():
             import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
             add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
             setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
-            print(f"Phase 1 complete for {TABLE_NAME}")
+            print(f" Phase 1 complete for {TABLE_NAME}")
     
     if args.phase == '2' or args.full:
-        print(f"Phase 2: Creating indexes for {TABLE_NAME}")
+        print(f" Phase 2: Creating indexes for {TABLE_NAME}")
         if not create_mailgunemail_indexes(indexes):
             success = False
     
     if args.phase == '3' or args.full:
-        print(f"Phase 3: Creating foreign keys for {TABLE_NAME}")
+        print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
         if not create_mailgunemail_foreign_keys(foreign_keys):
             success = False
     
     if success:
-        print("Operation completed successfully!")
+        print(" Operation completed successfully!")
     else:
-        print("Operation completed with errors!")
+        print(" Operation completed with errors!")
 
 if __name__ == "__main__":
     main()

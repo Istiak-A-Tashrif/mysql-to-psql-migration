@@ -36,8 +36,7 @@ from table_utils import (
     add_primary_key_constraint,
     setup_auto_increment_sequence,
     execute_postgresql_sql,
-    robust_export_and_import_data,
-    import_lead_from_csv
+    robust_export_and_import_data
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -190,6 +189,13 @@ def process_lead_column_definition(line, preserve_case):
     # Remove backticks and handle MySQL-specific types
     line = line.replace('`', '"' if preserve_case else '')
     
+    # Special handling for ID column with AUTO_INCREMENT
+    if '"id"' in line.lower() and 'auto_increment' in line.lower():
+        if preserve_case:
+            return '"id" SERIAL NOT NULL'
+        else:
+            return 'id SERIAL NOT NULL'
+    
     # MySQL to PostgreSQL type conversions for Lead
     conversions = [
         (r'\btinyint\(1\)\b', 'BOOLEAN'),
@@ -340,7 +346,7 @@ def import_lead_data_with_constraint_handling():
     # Export robust CSV only
     robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True, export_only=True)
     # Now use the dedicated cleaner/importer
-    import_result = import_lead_from_csv(TABLE_NAME, PRESERVE_MYSQL_CASE)
+    import_result = import_data_to_postgresql(TABLE_NAME, PRESERVE_MYSQL_CASE)
     if not import_result:
         print("❌ Data import failed")
         return False

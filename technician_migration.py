@@ -36,8 +36,7 @@ from table_utils import (
     add_primary_key_constraint,
     setup_auto_increment_sequence,
     execute_postgresql_sql,
-    robust_export_and_import_data,
-    import_technician_from_csv
+    robust_export_and_import_data
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -351,7 +350,7 @@ def import_technician_data_with_constraint_handling():
     # Export robust CSV only
     robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True, export_only=True)
     # Now use the dedicated cleaner/importer
-    import_result = import_technician_from_csv(TABLE_NAME, PRESERVE_MYSQL_CASE)
+    import_result = import_data_to_postgresql(TABLE_NAME, PRESERVE_MYSQL_CASE)
     if not import_result:
         print(" Data import failed")
         return False

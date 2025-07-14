@@ -1,0 +1,1 @@
+COPY "AutomationAttachment" ("id", "fileUrl", "communicationId", "marketingId", "serviceMaintenanceId", "invoiceId", "createdAt", "updatedAt") FROM '/tmp/AutomationAttachment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

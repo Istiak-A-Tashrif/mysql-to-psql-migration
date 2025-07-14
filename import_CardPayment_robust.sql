@@ -1,0 +1,1 @@
+COPY "CardPayment" ("id", "paymentId", "creditCard", "cardType") FROM '/tmp/CardPayment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

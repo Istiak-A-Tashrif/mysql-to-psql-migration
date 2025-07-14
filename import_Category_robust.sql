@@ -1,0 +1,1 @@
+COPY "Category" ("id", "name", "company_id", "created_at", "updated_at") FROM '/tmp/Category_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -1,0 +1,1 @@
+COPY "Vendor" ("id", "name", "website", "email", "phone", "address", "city", "state", "zip", "companyName", "notes", "company_id", "created_at", "updated_at") FROM '/tmp/Vendor_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -46,7 +46,7 @@ def main():
         if not os.path.exists(script_name):
             missing_tables.append(table)
     
-    print(f"\n🔍 Missing migration scripts for {len(missing_tables)} tables:")
+    print(f"\n Missing migration scripts for {len(missing_tables)} tables:")
     for i, table in enumerate(missing_tables, 1):
         print(f"{i:2d}. {table}")
     

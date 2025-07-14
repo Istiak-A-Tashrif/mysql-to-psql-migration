@@ -1,0 +1,1 @@
+COPY "CalendarSettings" ("id", "company_id", "weekStart", "dayStart", "dayEnd", "weekend1", "weekend2", "created_at", "updated_at") FROM '/tmp/CalendarSettings_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -44,7 +44,7 @@ TABLE_NAME = "ClientSmsAttachments"
 
 def get_clientsmsattachments_table_info():
     """Get complete ClientSmsAttachments table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     if not result or result.returncode != 0:

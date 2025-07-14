@@ -1,0 +1,1 @@
+COPY "VehicleColor" ("id", "name", "company_id", "created_at", "updated_at") FROM '/tmp/VehicleColor_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

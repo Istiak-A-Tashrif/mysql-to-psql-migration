@@ -1,0 +1,1 @@
+COPY "Task" ("id", "title", "description", "date", "start_time", "end_time", "priority", "created_at", "updated_at", "user_id", "company_id", "invoice_id", "client_id", "googleEventId", "lead_id") FROM '/tmp/Task_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

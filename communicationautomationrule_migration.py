@@ -45,7 +45,7 @@ TABLE_NAME = "CommunicationAutomationRule"
 
 def get_communicationautomationrule_table_info():
     """Get complete CommunicationAutomationRule table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     if not result or result.returncode != 0:
