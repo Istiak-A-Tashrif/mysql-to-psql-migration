@@ -41,7 +41,7 @@ def execute_postgresql_sql(sql_statement, description="SQL statement"):
     copy_result = run_command(copy_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy {description} file")
+        print(f" Failed to copy {description} file")
         return False, None
     
     result = run_command('docker exec postgres_target psql -U postgres -d target_db -f /tmp/temp_sql.sql')
@@ -54,7 +54,7 @@ def execute_postgresql_sql(sql_statement, description="SQL statement"):
 
 def get_mysql_table_columns(table_name):
     """Get column information from MySQL table"""
-    print(f"🔍 Getting MySQL column info for {table_name}...")
+    print(f"Getting MySQL column info for {table_name}...")
     
     # Use DESCRIBE which gives more reliable output format - handle reserved words
     if table_name == "Lead":
@@ -64,7 +64,7 @@ def get_mysql_table_columns(table_name):
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get MySQL columns: {result.stderr if result else 'No result'}")
+        print(f" Failed to get MySQL columns: {result.stderr if result else 'No result'}")
         return None
     
     columns = []
@@ -105,16 +105,16 @@ def get_mysql_table_columns(table_name):
                     'extra': parts[5] if len(parts) > 5 else ''
                 })
     
-    print(f"✅ Found {len(columns)} MySQL columns")
+    print(" Found {len(columns)} MySQL columns")
     if len(columns) == 0:
-        print("⚠️ Debug: Raw MySQL output:")
+        print("Debug: Raw MySQL output:")
         print(result.stdout)
     
     return columns
 
 def get_postgresql_table_columns(table_name, preserve_case=True):
     """Get column information from PostgreSQL table"""
-    print(f"🔍 Getting PostgreSQL column info for {table_name}...")
+    print(f"Getting PostgreSQL column info for {table_name}...")
     
     # Use the appropriate table name for PostgreSQL
     pg_table_name = table_name if preserve_case else table_name.lower()
@@ -125,7 +125,7 @@ def get_postgresql_table_columns(table_name, preserve_case=True):
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get PostgreSQL columns: {result.stderr if result else 'No result'}")
+        print(f" Failed to get PostgreSQL columns: {result.stderr if result else 'No result'}")
         return None
     
     columns = []
@@ -147,7 +147,7 @@ def get_postgresql_table_columns(table_name, preserve_case=True):
                     'default': parts[3] if parts[3] else None
                 })
     
-    print(f"✅ Found {len(columns)} PostgreSQL columns")
+    print(f" Found {len(columns)} PostgreSQL columns")
     return columns
 
 def normalize_mysql_type(mysql_type):
@@ -197,7 +197,7 @@ def normalize_mysql_type(mysql_type):
 
 def compare_table_structures(table_name, preserve_case=True):
     """Compare table structures between MySQL and PostgreSQL"""
-    print(f"🔍 Comparing table structures for {table_name}")
+    print(f"Comparing table structures for {table_name}")
     print("=" * 60)
     
     # Get columns from both databases
@@ -205,15 +205,15 @@ def compare_table_structures(table_name, preserve_case=True):
     postgres_columns = get_postgresql_table_columns(table_name, preserve_case)
     
     if mysql_columns is None:
-        print("❌ Could not get MySQL table structure")
+        print(" Could not get MySQL table structure")
         return False
     
     if postgres_columns is None:
-        print("❌ Could not get PostgreSQL table structure")
+        print(" Could not get PostgreSQL table structure")
         return False
     
-    print(f"📊 MySQL has {len(mysql_columns)} columns")
-    print(f"📊 PostgreSQL has {len(postgres_columns)} columns")
+    print(f" MySQL has {len(mysql_columns)} columns")
+    print(f" PostgreSQL has {len(postgres_columns)} columns")
     
     # Create dictionaries for easier comparison (case-insensitive)
     mysql_dict = {col['name'].lower(): col for col in mysql_columns}
@@ -228,7 +228,7 @@ def compare_table_structures(table_name, preserve_case=True):
     differences = []
     matches = 0
     
-    print(f"\n📋 Column-by-column comparison:")
+    print(f"\n Column-by-column comparison:")
     print("-" * 80)
     print(f"{'Column':<20} {'MySQL Type':<25} {'PostgreSQL Type':<25} {'Status'}")
     print("-" * 80)
@@ -243,11 +243,11 @@ def compare_table_structures(table_name, preserve_case=True):
         
         if not mysql_col:
             pg_type = postgres_col['type'] if postgres_col else 'unknown'
-            print(f"{postgres_display_name:<20} {'(missing)':<25} {pg_type:<25} ❌ Only in PostgreSQL")
+            print(f"{postgres_display_name:<20} {'(missing)':<25} {pg_type:<25}  Only in PostgreSQL")
             differences.append(f"Column '{postgres_display_name}' only exists in PostgreSQL")
         elif not postgres_col:
             my_type = mysql_col['type'] if mysql_col else 'unknown'
-            print(f"{mysql_display_name:<20} {my_type:<25} {'(missing)':<25} ❌ Only in MySQL")
+            print(f"{mysql_display_name:<20} {my_type:<25} {'(missing)':<25}  Only in MySQL")
             differences.append(f"Column '{mysql_display_name}' only exists in MySQL")
         else:
             # Compare types
@@ -267,10 +267,10 @@ def compare_table_structures(table_name, preserve_case=True):
             null_match = mysql_nullable == postgres_nullable
             
             if type_match and null_match:
-                print(f"{mysql_display_name:<20} {mysql_col['type']:<25} {postgres_col['type']:<25} ✅ Match")
+                print(f"{mysql_display_name:<20} {mysql_col['type']:<25} {postgres_col['type']:<25}  Match")
                 matches += 1
             else:
-                status = "❌ "
+                status = " "
                 if not type_match:
                     status += "Type mismatch "
                 if not null_match:
@@ -280,22 +280,21 @@ def compare_table_structures(table_name, preserve_case=True):
                 differences.append(f"Column '{mysql_display_name}': MySQL({mysql_col['type']}, null={mysql_col['null']}) vs PostgreSQL({postgres_col['type']}, null={postgres_col['nullable']})")
     
     print("-" * 80)
-    print(f"\n📊 Summary:")
-    print(f"   ✅ Matching columns: {matches}")
-    print(f"   ❌ Differences: {len(differences)}")
-    
+    print(f"\n Summary:")
+    print(f"    Matching columns: {matches}")
+    print(f"    Differences: {len(differences)}")
     if differences:
-        print(f"\n⚠️ Found {len(differences)} differences:")
+        print(f"\nFound {len(differences)} differences:")
         for i, diff in enumerate(differences, 1):
             print(f"   {i}. {diff}")
         return False
     else:
-        print(f"\n🎉 Table structures match perfectly!")
+        print(f"\nTable structures match perfectly!")
         return True
 
 def verify_table_structure(table_name, preserve_case=True):
     """Verify that a table structure matches between MySQL and PostgreSQL"""
-    print(f"🔍 Verifying {table_name} table structure consistency")
+    print(f"Verifying {table_name} table structure consistency")
     print("=" * 70)
     
     # First check if tables exist
@@ -317,16 +316,15 @@ def verify_table_structure(table_name, preserve_case=True):
         except:
             postgres_exists = False
     
-    print(f"📋 MySQL {table_name} table exists: {'✅' if mysql_exists else '❌'}")
-    print(f"📋 PostgreSQL {pg_table_name} table exists: {'✅' if postgres_exists else '❌'}")
+    print(f" MySQL {table_name} table exists: {'' if mysql_exists else ''}")
     
     if not mysql_exists:
-        print(f"❌ MySQL table '{table_name}' does not exist!")
+        print(f" MySQL table '{table_name}' does not exist!")
         return False
     
     if not postgres_exists:
-        print(f"❌ PostgreSQL table '{pg_table_name}' does not exist!")
-        print("💡 Run the migration script first to create the table")
+        print(f" PostgreSQL table '{pg_table_name}' does not exist!")
+        print(" Run the migration script first to create the table")
         return False
     
     print("\n" + "=" * 50)
@@ -334,7 +332,7 @@ def verify_table_structure(table_name, preserve_case=True):
 
 def check_docker_containers():
     """Check if Docker containers are running"""
-    print("🔍 Checking Docker containers...")
+    print("Checking Docker containers...")
     
     mysql_check = run_command("docker ps --filter name=mysql_source --format '{{.Names}}'")
     postgres_check = run_command("docker ps --filter name=postgres_target --format '{{.Names}}'")
@@ -342,11 +340,10 @@ def check_docker_containers():
     mysql_running = mysql_check and mysql_check.returncode == 0 and 'mysql_source' in mysql_check.stdout
     postgres_running = postgres_check and postgres_check.returncode == 0 and 'postgres_target' in postgres_check.stdout
     
-    print(f"📊 MySQL container (mysql_source): {'✅ Running' if mysql_running else '❌ Not running'}")
-    print(f"📊 PostgreSQL container (postgres_target): {'✅ Running' if postgres_running else '❌ Not running'}")
+    print(f" MySQL container (mysql_source): {' Running' if mysql_running else ' Not running'}")
     
     if not mysql_running or not postgres_running:
-        print("\n❌ Please start the required Docker containers first:")
+        print("\n Please start the required Docker containers first:")
         if not mysql_running:
             print("   docker start mysql_source")
         if not postgres_running:
@@ -357,7 +354,7 @@ def check_docker_containers():
 
 def count_table_records(table_name):
     """Count records in both MySQL and PostgreSQL tables"""
-    print(f"📊 Counting records in both {table_name} tables...")
+    print(f" Counting records in both {table_name} tables...")
     
     # MySQL count
     mysql_cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT COUNT(*) FROM {table_name};"'
@@ -378,15 +375,15 @@ def count_table_records(table_name):
     if postgres_result and postgres_result.returncode == 0:
         postgres_count = postgres_result.stdout.strip()
     
-    print(f"📊 MySQL {table_name} records: {mysql_count}")
-    print(f"📊 PostgreSQL {table_name.lower()} records: {postgres_count}")
+    print(f" MySQL {table_name} records: {mysql_count}")
+    print(f" PostgreSQL {table_name.lower()} records: {postgres_count}")
     
     if mysql_count != "Error" and postgres_count != "Error":
         if mysql_count == postgres_count:
-            print("✅ Record counts match!")
+            print(" Record counts match!")
             return True, mysql_count, postgres_count
         else:
-            print("⚠️ Record counts don't match!")
+            print("Record counts don't match!")
             return False, mysql_count, postgres_count
     
     return False, mysql_count, postgres_count
@@ -397,13 +394,13 @@ def run_command_with_timeout(command, timeout=3600):
 
 def get_mysql_table_info(table_name):
     """Get complete table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {table_name} from MySQL...")
+    print(f"Getting complete table info for {table_name} from MySQL...")
     
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{table_name}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get table info: {result.stderr if result else 'No result'}")
+        print(f" Failed to get table info: {result.stderr if result else 'No result'}")
         return None
     
     return result.stdout
@@ -429,7 +426,7 @@ def table_exists_postgresql(table_name):
 
 def analyze_column_differences(table_name):
     """Analyze column differences and suggest fixes"""
-    print(f"\n🔍 Analyzing column differences for {table_name}...")
+    print(f"\nAnalyzing column differences for {table_name}...")
     
     mysql_columns = get_mysql_table_columns(table_name)
     postgres_columns = get_postgresql_table_columns(table_name)
@@ -473,21 +470,21 @@ def analyze_column_differences(table_name):
             suggestions.append(f"-- Column '{mysql_original}' needs to be added to PostgreSQL table")
     
     if issues:
-        print(f"\n⚠️ Found {len(issues)} column issues:")
+        print(f"\nFound {len(issues)} column issues:")
         for i, issue in enumerate(issues, 1):
             print(f"   {i}. {issue}")
         
-        print(f"\n💡 Suggested fixes:")
+        print(f"\nSuggested fixes:")
         for suggestion in suggestions:
             print(f"   {suggestion}")
     else:
-        print(f"\n✅ No column issues found!")
+        print(f"\n No column issues found!")
 
 def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
     """Drop and create PostgreSQL table"""
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     
-    print(f"🗑️ Dropping existing {pg_table_name} table if exists...")
+    print(f"Dropping existing {pg_table_name} table if exists...")
     
     # Drop table if exists
     drop_sql = f"DROP TABLE IF EXISTS {pg_table_name} CASCADE;"
@@ -508,12 +505,12 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
     run_command('docker exec postgres_target rm -f /tmp/drop_table.sql')  # Remove container file
     
     if not result or result.returncode != 0:
-        print(f"⚠️ Warning: Could not drop table (might not exist): {result.stderr if result else 'No result'}")
+        print(f"Warning: Could not drop table (might not exist): {result.stderr if result else 'No result'}")
     else:
-        print(f"✅ Dropped existing {pg_table_name} table")
+        print(f"Dropped existing {pg_table_name} table")
     
     # Create new table
-    print(f"🏗️ Creating {pg_table_name} table...")
+    print(f"Creating {pg_table_name} table...")
     
     # Clean the DDL and update table name if preserving case
     clean_ddl = postgres_ddl.strip()
@@ -540,7 +537,7 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
         result = run_command(copy_cmd)
         
         if not result or result.returncode != 0:
-            print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+            print(f"Failed to copy SQL file: {result.stderr if result else 'No result'}")
             return False
         
         # Execute the SQL file
@@ -548,18 +545,18 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
         result = run_command(exec_cmd)
         
         if not result or result.returncode != 0:
-            print(f"❌ Failed to create table: {result.stderr if result else 'No result'}")
-            print(f"📋 DDL that failed:")
+            print(f"Failed to create table: {result.stderr if result else 'No result'}")
+            print(f"DDL that failed:")
             print(clean_ddl)
             return False
         
         # Also show any warnings or output from table creation
         if result.stdout:
-            print(f"🔍 Table creation output: {result.stdout}")
+            print(f"Table creation output: {result.stdout}")
         if result.stderr:
-            print(f"⚠️ Table creation warnings: {result.stderr}")
+            print(f"Table creation warnings: {result.stderr}")
         
-        print(f"✅ Created {pg_table_name} table successfully")
+        print(f"Created {pg_table_name} table successfully")
         return True
         
     finally:
@@ -569,18 +566,18 @@ def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
 
 def robust_export_and_import_data(table_name, preserve_case=True, include_id=False, export_only=False):
     """Robust data export from MySQL and import to PostgreSQL with better error handling. If export_only is True, only export the CSV and return the filename."""
-    print(f"🔄 Robust data transfer for {table_name}...")
+    print(f" Robust data transfer for {table_name}...")
     # Get column information first
     mysql_columns = get_mysql_table_columns(table_name)
     if not mysql_columns:
-        print(f"❌ Failed to get column information for {table_name}")
+        print(f" Failed to get column information for {table_name}")
         return False
     column_names = [col['name'] for col in mysql_columns]
     if not include_id and 'id' in column_names:
         column_names.remove('id')
     quoted_columns = [f'`{col}`' for col in column_names]
     select_columns = ', '.join(quoted_columns)
-    print(f"📋 Exporting columns: {select_columns}")
+    print(f" Exporting columns: {select_columns}")
     # Export data with careful handling - handle reserved words
     if table_name == "Lead":
         export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `Lead`" -B --skip-column-names --raw'''
@@ -588,11 +585,11 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
         export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT {select_columns} FROM `{table_name}`" -B --skip-column-names --raw'''
     result = run_command(export_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to export data: {result.stderr if result else 'No result'}")
+        print(f" Failed to export data: {result.stderr if result else 'No result'}")
         return False
     raw_data = result.stdout
     if not raw_data.strip():
-        print(f"⚠️ No data found in {table_name}")
+        print(f"No data found in {table_name}")
         return True  # Empty table is not an error
     lines = raw_data.splitlines()
     processed_rows = []
@@ -601,7 +598,7 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
             continue
         fields = line.split('\t')
         if len(fields) != len(column_names):
-            print(f"⚠️ Row {i+1}: Expected {len(column_names)} fields, got {len(fields)}")
+            print(f"Row {i+1}: Expected {len(column_names)} fields, got {len(fields)}")
             while len(fields) < len(column_names):
                 fields.append('')
             fields = fields[:len(column_names)]
@@ -621,20 +618,20 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
                     processed_fields.append(field)
         processed_rows.append(','.join(processed_fields))
     if not processed_rows:
-        print(f"⚠️ No valid rows found in {table_name}")
+        print(f"No valid rows found in {table_name}")
         return True
-    print(f"📊 Processed {len(processed_rows)} rows from {table_name}")
+    print(f" Processed {len(processed_rows)} rows from {table_name}")
     csv_filename = f'{table_name}_robust_import.csv'
     with open(csv_filename, 'w', encoding='utf-8') as f:
         f.write('\n'.join(processed_rows))
     if export_only:
-        print(f"✅ Exported robust CSV for {table_name}: {csv_filename}")
+        print(f" Exported robust CSV for {table_name}: {csv_filename}")
         return csv_filename
     # Copy to PostgreSQL container
     copy_cmd = f'docker cp {csv_filename} postgres_target:/tmp/{csv_filename}'
     result = run_command(copy_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy CSV file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy CSV file: {result.stderr if result else 'No result'}")
         return False
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     if preserve_case:
@@ -649,7 +646,7 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
     copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
     result = run_command(copy_sql_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy SQL file: {result.stderr if result else 'No result'}")
         return False
     import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
     result = run_command(import_cmd)
@@ -662,16 +659,16 @@ def robust_export_and_import_data(table_name, preserve_case=True, include_id=Fal
     for cmd in cleanup_cmds:
         run_command(cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        print(f" Failed to import data: {result.stderr if result else 'No result'}")
         if result:
-            print(f"🔍 Import stdout: {result.stdout}")
+            print(f"Import stdout: {result.stdout}")
         return False
-    print(f"✅ Successfully imported {len(processed_rows)} rows to {pg_table_name}")
+    print(f" Successfully imported {len(processed_rows)} rows to {pg_table_name}")
     return True
 
 def export_and_clean_mysql_data(table_name):
     """Export data from MySQL with advanced cleaning"""
-    print(f"📤 Exporting data from MySQL {table_name} table...")
+    print(f"Exporting data from MySQL {table_name} table...")
     
     # Use the new robust function
     return robust_export_and_import_data(table_name, preserve_case=True, include_id=False)
@@ -682,20 +679,20 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, in
     return robust_export_and_import_data(table_name, preserve_case, include_id)
 
 def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack", preserve_case=True):
-    """Dedicated function to import ClientConversationTrack from the processed CSV file"""
-    print(f"🔄 Importing {table_name} from processed CSV file...")
+    """Dedicated function to import ClientConversationTrack from the robust export CSV file"""
+    print(f" Importing {table_name} from robust export CSV file...")
     
-    input_csv = f'{table_name}_processed.csv'
+    input_csv = f'{table_name}_robust_import.csv'
     cleaned_csv = f'{table_name}_cleaned.csv'
     
     # Check if CSV file exists
     if not os.path.exists(input_csv):
-        print(f"❌ CSV file {input_csv} not found")
+        print(f" CSV file {input_csv} not found")
         return False
     
     # Clean the CSV file first
     if not clean_clientconversationtrack_csv(input_csv, cleaned_csv):
-        print(f"❌ Failed to clean CSV file")
+        print(f" Failed to clean CSV file")
         return False
     
     # Get file size and line count
@@ -703,16 +700,16 @@ def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack"
     with open(cleaned_csv, 'r', encoding='utf-8') as f:
         line_count = sum(1 for _ in f)
     
-    print(f"📊 Cleaned CSV file: {cleaned_csv}")
-    print(f"📊 File size: {file_size} bytes")
-    print(f"📊 Line count: {line_count}")
+    print(f" Cleaned CSV file: {cleaned_csv}")
+    print(f" File size: {file_size} bytes")
+    print(f" Line count: {line_count}")
     
     # Copy cleaned CSV to PostgreSQL container
     copy_cmd = f'docker cp {cleaned_csv} postgres_target:/tmp/{cleaned_csv}'
     result = run_command(copy_cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
         return False
     
     # Get PostgreSQL table name
@@ -741,26 +738,26 @@ def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack"
     with open(sql_filename, 'w', encoding='utf-8') as f:
         f.write(copy_sql)
     
-    print(f"📋 COPY SQL: {copy_sql}")
+    print(f" COPY SQL: {copy_sql}")
     
     # Copy SQL file to container
     copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
     result = run_command(copy_sql_cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy SQL file: {result.stderr if result else 'No result'}")
         return False
     
     # Execute import with detailed logging
     import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
-    print(f"🚀 Executing import command: {import_cmd}")
+    print(f" Executing import command: {import_cmd}")
     
     result = run_command(import_cmd)
     
-    print(f"📊 Import result return code: {result.returncode if result else 'No result'}")
+    print(f" Import result return code: {result.returncode if result else 'No result'}")
     if result:
-        print(f"📊 Import stdout: {result.stdout}")
-        print(f"📊 Import stderr: {result.stderr}")
+        print(f" Import stdout: {result.stdout}")
+        print(f" Import stderr: {result.stderr}")
     
     # Clean up files
     cleanup_cmds = [
@@ -774,7 +771,7 @@ def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack"
         run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        print(f" Failed to import data: {result.stderr if result else 'No result'}")
         return False
     
     # Verify import
@@ -787,11 +784,11 @@ def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack"
     copy_result = run_command(verify_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy verification file")
+        print(f" Failed to copy verification file")
         return False
     
     verify_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{verify_filename}'
-    print(f"🔍 Debug: Verification command: {verify_cmd}")
+    print(f" Debug: Verification command: {verify_cmd}")
     verify_result = run_command(verify_cmd)
     
     # Clean up verification file
@@ -802,98 +799,150 @@ def import_clientconversationtrack_from_csv(table_name="ClientConversationTrack"
         lines = verify_result.stdout.strip().split('\n')
         if len(lines) >= 3:
             count = lines[2].strip()  # Line 3 (index 2) contains the count
-            print(f"✅ Successfully imported data. Row count: {count}")
+            print(f" Successfully imported data. Row count: {count}")
             return True
         else:
-            print(f"❌ Unexpected verification output format: {verify_result.stdout}")
+            print(f" Unexpected verification output format: {verify_result.stdout}")
             return False
     else:
-        print(f"❌ Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
+        print(f" Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
         return False
 
+def repair_multiline_clientconversationtrack_csv(input_csv, repaired_csv, expected_fields=11, log_file='ClientConversationTrack_repair_log.txt', max_lines_per_row=10):
+    """Robustly repair multiline/broken rows in ClientConversationTrack CSV by accumulating lines until a valid row is parsed by csv.reader (handles quoted/multiline fields)."""
+    import csv
+    from io import StringIO
+    repaired_rows = []
+    bad_rows = []
+    buffer_lines = []
+    def is_valid_id(val):
+        try:
+            int(val)
+            return True
+        except Exception:
+            return False
+    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.rstrip('\n')
+            if not line:
+                continue
+            buffer_lines.append(line)
+            # Try to parse the buffer as a CSV row
+            buffer_str = '\n'.join(buffer_lines)
+            try:
+                reader = csv.reader(StringIO(buffer_str))
+                fields = next(reader)
+                # If first field is not an integer or wrong field count, keep accumulating
+                if len(fields) != expected_fields or not is_valid_id(fields[0]):
+                    if len(buffer_lines) < max_lines_per_row:
+                        continue
+                    else:
+                        # Too many lines, log as bad
+                        bad_rows.append(buffer_str)
+                        buffer_lines = []
+                        continue
+                # Valid row
+                repaired_rows.append(fields)
+                buffer_lines = []
+            except Exception:
+                if len(buffer_lines) < max_lines_per_row:
+                    continue
+                else:
+                    bad_rows.append(buffer_str)
+                    buffer_lines = []
+    # If anything left in buffer, log as bad
+    if buffer_lines:
+        bad_rows.append('\n'.join(buffer_lines))
+    # Write repaired rows
+    with open(repaired_csv, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        for row in repaired_rows:
+            writer.writerow(row)
+    # Write bad rows to log
+    if bad_rows:
+        with open(log_file, 'w', encoding='utf-8') as f:
+            for row in bad_rows:
+                f.write(row + '\n---\n')
+    print(f"🛠️ Robustly repaired CSV: {len(repaired_rows)} rows written. Bad rows: {len(bad_rows)} (see {log_file})")
+    return repaired_csv
+
+# Update clean_clientconversationtrack_csv to use the repaired CSV if needed
+import re
+
 def clean_clientconversationtrack_csv(input_csv, output_csv):
-    """Clean the ClientConversationTrack CSV file by fixing malformed rows"""
+    """Clean the ClientConversationTrack CSV file by fixing malformed rows, using repair if needed."""
     print(f"🧹 Cleaning CSV file: {input_csv} -> {output_csv}")
     import csv
     from io import StringIO
     import datetime
-    
     expected_fields = 11
     cleaned_rows = []
     problematic_rows = []
-    
     # Default timestamp for NOT NULL fields
     default_timestamp = "2025-01-01 00:00:00"
-    
     # Define NOT NULL fields and their defaults
     not_null_fields = {
         8: ('created_at', default_timestamp, 'timestamp'),   # created_at NOT NULL
         9: ('updated_at', default_timestamp, 'timestamp')    # updated_at NOT NULL
     }
-    
     # Define optional timestamp fields that should be validated
-    optional_timestamp_fields = {10}  # send_at
-    
+    optional_timestamp_fields = {10}
+    # First, try to repair multiline rows if present
+    multiline_detected = False
+    with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if not line.strip():
+                continue
+            if not re.match(r'^\d+,', line):
+                multiline_detected = True
+                break
+    if multiline_detected:
+        print(f"🔎 Multiline/broken rows detected, running repair...")
+        repaired_csv = input_csv.replace('.csv', '_repaired.csv')
+        input_csv = repair_multiline_clientconversationtrack_csv(input_csv, repaired_csv, expected_fields)
+    # Now clean as before
     with open(input_csv, 'r', encoding='utf-8', errors='replace') as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
-            
             try:
-                # Use proper CSV reader to handle complex data
                 reader = csv.reader(StringIO(line))
                 fields = next(reader)
-                
-                # Ensure correct field count
                 if len(fields) < expected_fields:
                     fields += [''] * (expected_fields - len(fields))
                 elif len(fields) > expected_fields:
                     fields = fields[:expected_fields]
-                
-                # Fix NOT NULL fields
                 for idx, (field_name, default_value, field_type) in not_null_fields.items():
                     if idx < len(fields):
                         if field_type == 'timestamp':
-                            # Ensure timestamp fields are valid
                             if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
                                 fields[idx] = default_value
-                
-                # Validate optional timestamp fields
                 for idx in optional_timestamp_fields:
                     if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
                         if not is_valid_timestamp(fields[idx]):
-                            fields[idx] = ''  # Set to empty for optional fields
-                
-                # Use proper CSV writer to handle complex data
+                            fields[idx] = ''
                 writer = StringIO()
                 csv_writer = csv.writer(writer)
                 csv_writer.writerow(fields)
                 cleaned_line = writer.getvalue().strip()
                 cleaned_rows.append(cleaned_line)
-                
             except Exception as e:
-                print(f"❌ Row {line_num}: Error parsing line: {e}")
+                print(f" Row {line_num}: Error parsing line: {e}")
                 problematic_rows.append((line_num, line))
                 continue
-    
-    # Write cleaned CSV using proper CSV writer
     with open(output_csv, 'w', encoding='utf-8', newline='') as f:
         csv_writer = csv.writer(f)
         for row in cleaned_rows:
-            # Parse the cleaned line back to fields and write properly
             reader = csv.reader(StringIO(row))
             fields = next(reader)
             csv_writer.writerow(fields)
-    
-    print(f"✅ Cleaned CSV: {len(cleaned_rows)} rows written")
-    print(f"⚠️ Problematic rows: {len(problematic_rows)}")
-    
+    print(f" Cleaned CSV: {len(cleaned_rows)} rows written")
+    print(f" Problematic rows: {len(problematic_rows)}")
     if problematic_rows:
-        print("📋 First few problematic rows:")
+        print(" First few problematic rows:")
         for i, (line_num, line) in enumerate(problematic_rows[:3]):
             print(f"  Row {line_num}: {line[:100]}...")
-    
     return len(cleaned_rows)
 
 def is_valid_timestamp(timestamp_str):
@@ -947,11 +996,11 @@ def setup_auto_increment_sequence(table_name, preserve_case=True):
     copy_result = run_command(copy_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy max ID query file")
+        print(f" Failed to copy max ID query file")
         return False
     
     max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_id.sql'
-    print(f"🔍 Debug: max_id_cmd={max_id_cmd}")
+    print(f" Debug: max_id_cmd={max_id_cmd}")
     max_result = run_command(max_id_cmd)
     
     # Cleanup
@@ -959,7 +1008,7 @@ def setup_auto_increment_sequence(table_name, preserve_case=True):
     run_command('docker exec postgres_target rm -f /tmp/get_max_id.sql')
     
     if not max_result or max_result.returncode != 0:
-        print(f"❌ Failed to get max ID for {table_name}")
+        print(f" Failed to get max ID for {table_name}")
         if max_result:
             print(f"   Error: {max_result.stderr}")
             print(f"   Return code: {max_result.returncode}")
@@ -968,9 +1017,9 @@ def setup_auto_increment_sequence(table_name, preserve_case=True):
     try:
         max_id = int(max_result.stdout.strip())
         next_id = max_id + 1
-        print(f"📊 Max ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
+        print(f" Max ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
     except ValueError:
-        print(f"❌ Could not parse max ID for {table_name}")
+        print(f" Could not parse max ID for {table_name}")
         return False
     
     # Create sequence name
@@ -998,7 +1047,7 @@ ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
     copy_result = run_command(copy_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy sequence setup file")
+        print(f" Failed to copy sequence setup file")
         return False
     
     exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/setup_sequence.sql'
@@ -1009,10 +1058,10 @@ ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
     run_command('docker exec postgres_target rm -f /tmp/setup_sequence.sql')
     
     if exec_result and exec_result.returncode == 0:
-        print(f"✅ Auto-increment sequence setup complete for {table_name}")
+        print(f" Auto-increment sequence setup complete for {table_name}")
         return True
     else:
-        print(f"❌ Failed to setup sequence for {table_name}")
+        print(f" Failed to setup sequence for {table_name}")
         if exec_result:
             print(f"   Error: {exec_result.stderr}")
         return False
@@ -1036,11 +1085,11 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
     copy_result = run_command(copy_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy max varchar ID query file")
+        print(f" Failed to copy max varchar ID query file")
         return False
     
     max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_varchar_id.sql'
-    print(f"🔍 Debug: max_id_cmd={max_id_cmd}")
+    print(f" Debug: max_id_cmd={max_id_cmd}")
     max_result = run_command(max_id_cmd)
     
     # Cleanup
@@ -1048,7 +1097,7 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
     run_command('docker exec postgres_target rm -f /tmp/get_max_varchar_id.sql')
     
     if not max_result or max_result.returncode != 0:
-        print(f"❌ Failed to get max varchar ID for {table_name}")
+        print(f" Failed to get max varchar ID for {table_name}")
         if max_result:
             print(f"   Error: {max_result.stderr}")
             print(f"   Return code: {max_result.returncode}")
@@ -1057,9 +1106,9 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
     try:
         max_id = int(max_result.stdout.strip())
         next_id = max_id + 1
-        print(f"📊 Max varchar ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
+        print(f" Max varchar ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
     except ValueError:
-        print(f"❌ Could not parse max varchar ID for {table_name}")
+        print(f" Could not parse max varchar ID for {table_name}")
         return False
     
     # Create sequence name
@@ -1070,7 +1119,7 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
 -- Create sequence if it doesn't exist
 CREATE SEQUENCE IF NOT EXISTS {sequence_name};
 
--- Set sequence to start from next available ID
+-- Set sequence to start from next avilable ID
 SELECT setval('{sequence_name}', {next_id});
 
 -- Create function to generate next varchar ID
@@ -1095,7 +1144,7 @@ ALTER COLUMN id SET DEFAULT next_{table_name.lower()}_id();
     copy_result = run_command(copy_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy varchar sequence setup file")
+        print(f" Failed to copy varchar sequence setup file")
         return False
     
     exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/setup_varchar_sequence.sql'
@@ -1106,10 +1155,10 @@ ALTER COLUMN id SET DEFAULT next_{table_name.lower()}_id();
     run_command('docker exec postgres_target rm -f /tmp/setup_varchar_sequence.sql')
     
     if exec_result and exec_result.returncode == 0:
-        print(f"✅ Varchar ID auto-increment sequence setup complete for {table_name}")
+        print(f" Varchar ID auto-increment sequence setup complete for {table_name}")
         return True
     else:
-        print(f"❌ Failed to setup varchar ID sequence for {table_name}")
+        print(f" Failed to setup varchar ID sequence for {table_name}")
         if exec_result:
             print(f"   Error: {exec_result.stderr}")
         return False
@@ -1133,7 +1182,7 @@ def add_primary_key_constraint(table_name, preserve_case=True):
     copy_result = run_command(copy_cmd)
     
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy primary key file")
+        print(f" Failed to copy primary key file")
         return False
     
     exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/add_primary_key.sql'
@@ -1144,10 +1193,10 @@ def add_primary_key_constraint(table_name, preserve_case=True):
     run_command('docker exec postgres_target rm -f /tmp/add_primary_key.sql')
     
     if exec_result and exec_result.returncode == 0:
-        print(f"✅ PRIMARY KEY constraint added to {table_name}")
+        print(f" PRIMARY KEY constraint added to {table_name}")
         return True
     else:
-        print(f"⚠️ PRIMARY KEY constraint may already exist for {table_name}")
+        print(f" PRIMARY KEY constraint may already exist for {table_name}")
         # Don't return False here as the constraint might already exist
         return True
 
@@ -1169,7 +1218,7 @@ def clean_technician_csv(input_csv, output_csv):
         0: ('id', '0', 'integer'),             # id NOT NULL, default 0
         1: ('user_id', '0', 'integer'),       # user_id NOT NULL, default 0
         5: ('amount', '0', 'numeric'),        # amount NOT NULL, default 0
-        6: ('priority', 'Low', 'text'),       # priority NOT NULL, default 'Low'
+       6: ('priority', 'Low', 'text'),       # priority NOT NULL, default 'Low'
         7: ('status', 'unknown', 'text'),     # status NOT NULL, default 'unknown'
         9: ('service_id', '0', 'integer'),    # service_id NOT NULL, default 0
         11: ('company_id', '0', 'integer'),   # company_id NOT NULL, default 0
@@ -1210,17 +1259,11 @@ def clean_technician_csv(input_csv, output_csv):
                 if field_type == 'integer':
                     if not fields[idx] or not is_valid_integer(fields[idx]):
                         fields[idx] = default_value
-                elif field_type == 'numeric':
-                    if not fields[idx] or not is_valid_numeric(fields[idx]):
-                        fields[idx] = default_value
                 elif field_type == 'timestamp':
                     if not fields[idx] or fields[idx].strip() == '' or not is_valid_timestamp(fields[idx]):
                         fields[idx] = default_value
                 elif field_type == 'text':
-                    if idx == 6:  # priority
-                        if fields[idx] not in allowed_priorities:
-                            fields[idx] = 'Low'
-                    elif not fields[idx] or fields[idx].strip() == '':
+                    if not fields[idx] or fields[idx].strip() == '':
                         fields[idx] = default_value
                 elif field_type == 'boolean':
                     if not is_valid_bool(fields[idx]):
@@ -1243,7 +1286,7 @@ def clean_technician_csv(input_csv, output_csv):
                 fields = fields[:expected_fields]
             # Fill all NOT NULLs for malformed rows
             if len(fields) != expected_fields or any((idx < len(fields) and (not fields[idx] or fields[idx].strip() == '')) for idx in not_null_fields):
-                print(f"⚠️ Row {line_num}: Malformed or missing NOT NULLs. Filling defaults. Context:")
+                print(f" Row {line_num}: Malformed or missing NOT NULLs. Filling defaults. Context:")
                 for ctx in range(max(1, line_num-2), min(len(lines)+1, line_num+3)):
                     print(f"  Context Row {ctx}: {lines[ctx-1].strip()}")
                 fields = fill_not_nulls(fields)
@@ -1251,7 +1294,7 @@ def clean_technician_csv(input_csv, output_csv):
             for idx in integer_fields:
                 if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
                     if not is_valid_integer(fields[idx]):
-                        print(f"⚠️ Row {line_num}: Invalid integer in field {idx} (expected integer, got '{fields[idx]}')")
+                        print(f" Row {line_num}: Invalid integer in field {idx} (expected integer, got '{fields[idx]}')")
                         fields[idx] = ''
             # Validate optional timestamp fields
             for idx in optional_timestamp_fields:
@@ -1265,7 +1308,7 @@ def clean_technician_csv(input_csv, output_csv):
             cleaned_line = writer.getvalue().strip()
             cleaned_rows.append(cleaned_line)
         except Exception as e:
-            print(f"⚠️ Row {line_num}: Malformed row, skipping. Error: {e}")
+            print(f" Row {line_num}: Malformed row, skipping. Error: {e}")
             problematic_rows.append((line_num, line))
             continue
     # Write cleaned CSV
@@ -1275,9 +1318,9 @@ def clean_technician_csv(input_csv, output_csv):
             reader = csv.reader(StringIO(row))
             fields = next(reader)
             csv_writer.writerow(fields)
-    print(f"✅ Cleaned Technician CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
+    print(f" Cleaned Technician CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
     if problematic_rows:
-        print("📋 First few problematic rows:")
+        print(" First few problematic rows:")
         for i, (line_num, line) in enumerate(problematic_rows[:3]):
             print(f"  Row {line_num}: {line[:100]}...")
     print("\n--- First 5 cleaned rows (with field counts) ---")
@@ -1290,25 +1333,25 @@ def clean_technician_csv(input_csv, output_csv):
 
 def import_technician_from_csv(table_name="Technician", preserve_case=True):
     """Dedicated function to import Technician from the processed CSV file"""
-    print(f"🔄 Importing {table_name} from processed CSV file...")
+    print(f" Importing {table_name} from processed CSV file...")
     input_csv = f'{table_name}_robust_import.csv'
     cleaned_csv = f'{table_name}_cleaned.csv'
     if not os.path.exists(input_csv):
-        print(f"❌ CSV file {input_csv} not found")
+        print(f" CSV file {input_csv} not found")
         return False
     if not clean_technician_csv(input_csv, cleaned_csv):
-        print(f"❌ Failed to clean CSV file")
+        print(f" Failed to clean CSV file")
         return False
     file_size = os.path.getsize(cleaned_csv)
     with open(cleaned_csv, 'r', encoding='utf-8') as f:
         line_count = sum(1 for _ in f)
-    print(f"📊 Cleaned CSV file: {cleaned_csv}")
-    print(f"📊 File size: {file_size} bytes")
-    print(f"📊 Line count: {line_count}")
+    print(f" Cleaned CSV file: {cleaned_csv}")
+    print(f" File size: {file_size} bytes")
+    print(f" Line count: {line_count}")
     copy_cmd = f'docker cp {cleaned_csv} postgres_target:/tmp/{cleaned_csv}'
     result = run_command(copy_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
         return False
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     columns = [
@@ -1323,15 +1366,15 @@ def import_technician_from_csv(table_name="Technician", preserve_case=True):
     copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
     result = run_command(copy_sql_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy SQL file: {result.stderr if result else 'No result'}")
         return False
     import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
-    print(f"🚀 Executing import command: {import_cmd}")
+    print(f" Executing import command: {import_cmd}")
     result = run_command(import_cmd)
-    print(f"📊 Import result return code: {result.returncode if result else 'No result'}")
+    print(f" Import result return code: {result.returncode if result else 'No result'}")
     if result:
-        print(f"📊 Import stdout: {result.stdout}")
-        print(f"📊 Import stderr: {result.stderr}")
+        print(f" Import stdout: {result.stdout}")
+        print(f" Import stderr: {result.stderr}")
     cleanup_cmds = [
         f'rm -f {sql_filename}',
         f'rm -f {cleaned_csv}',
@@ -1341,7 +1384,7 @@ def import_technician_from_csv(table_name="Technician", preserve_case=True):
     for cmd in cleanup_cmds:
         run_command(cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        print(f" Failed to import data: {result.stderr if result else 'No result'}")
         return False
     verify_sql = f"SELECT COUNT(*) FROM {pg_table_name};"
     verify_filename = f'verify_{table_name}.sql'
@@ -1350,10 +1393,10 @@ def import_technician_from_csv(table_name="Technician", preserve_case=True):
     verify_cmd = f'docker cp {verify_filename} postgres_target:/tmp/{verify_filename}'
     copy_result = run_command(verify_cmd)
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy verification file")
+        print(f" Failed to copy verification file")
         return False
     verify_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{verify_filename}'
-    print(f"🔍 Debug: Verification command: {verify_cmd}")
+    print(f" Debug: Verification command: {verify_cmd}")
     verify_result = run_command(verify_cmd)
     run_command(f'rm -f {verify_filename}')
     run_command(f'docker exec postgres_target rm -f /tmp/{verify_filename}')
@@ -1361,18 +1404,18 @@ def import_technician_from_csv(table_name="Technician", preserve_case=True):
         lines = verify_result.stdout.strip().split('\n')
         if len(lines) >= 3:
             count = lines[2].strip()
-            print(f"✅ Successfully imported data. Row count: {count}")
+            print(f" Successfully imported data. Row count: {count}")
             return True
         else:
-            print(f"❌ Unexpected verification output format: {verify_result.stdout}")
+            print(f" Unexpected verification output format: {verify_result.stdout}")
             return False
     else:
-        print(f"❌ Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
+        print(f" Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
         return False
 
 def clean_lead_csv(input_csv, output_csv):
     """Clean the Lead CSV file by fixing malformed rows and ensuring correct field count (20 fields)"""
-    print(f"🧹 Cleaning Lead CSV file: {input_csv} -> {output_csv}")
+    print(f"Cleaning Lead CSV file: {input_csv} -> {output_csv}")
     import csv
     from io import StringIO
     import datetime
@@ -1448,7 +1491,7 @@ def clean_lead_csv(input_csv, output_csv):
                 fields = fields[:expected_fields]
             # Fill all NOT NULLs for malformed rows
             if len(fields) != expected_fields or any((idx < len(fields) and (not fields[idx] or fields[idx].strip() == '')) for idx in not_null_fields):
-                print(f"⚠️ Row {line_num}: Malformed or missing NOT NULLs. Filling defaults. Context:")
+                print(f"Row {line_num}: Malformed or missing NOT NULLs. Filling defaults. Context:")
                 for ctx in range(max(1, line_num-2), min(len(lines)+1, line_num+3)):
                     print(f"  Context Row {ctx}: {lines[ctx-1].strip()}")
                 fields = fill_not_nulls(fields)
@@ -1456,7 +1499,7 @@ def clean_lead_csv(input_csv, output_csv):
             for idx in integer_fields:
                 if idx < len(fields) and fields[idx] and fields[idx].strip() != '':
                     if not is_valid_integer(fields[idx]):
-                        print(f"⚠️ Row {line_num}: Invalid integer in field {idx} (expected integer, got '{fields[idx]}')")
+                        print(f"Row {line_num}: Invalid integer in field {idx} (expected integer, got '{fields[idx]}')")
                         fields[idx] = ''
             # Validate optional timestamp fields
             for idx in optional_timestamp_fields:
@@ -1470,7 +1513,7 @@ def clean_lead_csv(input_csv, output_csv):
             cleaned_line = writer.getvalue().strip()
             cleaned_rows.append(cleaned_line)
         except Exception as e:
-            print(f"⚠️ Row {line_num}: Malformed row, skipping. Error: {e}")
+            print(f"Row {line_num}: Malformed row, skipping. Error: {e}")
             problematic_rows.append((line_num, line))
             continue
     # Write cleaned CSV
@@ -1480,9 +1523,9 @@ def clean_lead_csv(input_csv, output_csv):
             reader = csv.reader(StringIO(row))
             fields = next(reader)
             csv_writer.writerow(fields)
-    print(f"✅ Cleaned Lead CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
+    print(f" Cleaned Lead CSV. {len(cleaned_rows)} rows written, {len(problematic_rows)} skipped.")
     if problematic_rows:
-        print("📋 First few problematic rows:")
+        print(" First few problematic rows:")
         for i, (line_num, line) in enumerate(problematic_rows[:3]):
             print(f"  Row {line_num}: {line[:100]}...")
     print("\n--- First 5 cleaned rows (with field counts) ---")
@@ -1495,21 +1538,21 @@ def clean_lead_csv(input_csv, output_csv):
 
 def import_lead_from_csv(table_name="Lead", preserve_case=True):
     """Dedicated function to import Lead from the processed CSV file"""
-    print(f"🔄 Importing {table_name} from processed CSV file...")
+    print(f" Importing {table_name} from processed CSV file...")
     input_csv = f'{table_name}_robust_import.csv'
     cleaned_csv = f'{table_name}_cleaned.csv'
     if not os.path.exists(input_csv):
-        print(f"❌ CSV file {input_csv} not found")
+        print(f" CSV file {input_csv} not found")
         return False
     if not clean_lead_csv(input_csv, cleaned_csv):
-        print(f"❌ Failed to clean CSV file")
+        print(f" Failed to clean CSV file")
         return False
     file_size = os.path.getsize(cleaned_csv)
     with open(cleaned_csv, 'r', encoding='utf-8') as f:
         line_count = sum(1 for _ in f)
-    print(f"📊 Cleaned CSV file: {cleaned_csv}")
-    print(f"📊 File size: {file_size} bytes")
-    print(f"📊 Line count: {line_count}")
+    print(f" Cleaned CSV file: {cleaned_csv}")
+    print(f" File size: {file_size} bytes")
+    print(f" Line count: {line_count}")
     # Print first 5 lines of cleaned CSV
     print("\n--- First 5 lines of cleaned CSV ---")
     with open(cleaned_csv, 'r', encoding='utf-8') as f:
@@ -1523,7 +1566,7 @@ def import_lead_from_csv(table_name="Lead", preserve_case=True):
     copy_cmd = f'docker cp {cleaned_csv} postgres_target:/tmp/{cleaned_csv}'
     result = run_command(copy_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy cleaned CSV file: {result.stderr if result else 'No result'}")
         return False
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     columns = [
@@ -1532,22 +1575,22 @@ def import_lead_from_csv(table_name="Lead", preserve_case=True):
     pg_columns = [f'"{col}"' for col in columns] if preserve_case else [col.lower() for col in columns]
     column_list = ', '.join(pg_columns)
     copy_sql = f'''COPY {pg_table_name} ({column_list}) FROM '/tmp/{cleaned_csv}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
-    print(f"\n📋 COPY SQL: {copy_sql}\n")
+    print(f"\n COPY SQL: {copy_sql}\n")
     sql_filename = f'import_{table_name}_dedicated.sql'
     with open(sql_filename, 'w', encoding='utf-8') as f:
         f.write(copy_sql)
     copy_sql_cmd = f'docker cp {sql_filename} postgres_target:/tmp/{sql_filename}'
     result = run_command(copy_sql_cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+        print(f" Failed to copy SQL file: {result.stderr if result else 'No result'}")
         return False
     import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_filename}'
-    print(f"🚀 Executing import command: {import_cmd}")
+    print(f" Executing import command: {import_cmd}")
     result = run_command(import_cmd)
-    print(f"📊 Import result return code: {result.returncode if result else 'No result'}")
+    print(f" Import result return code: {result.returncode if result else 'No result'}")
     if result:
-        print(f"📊 Import stdout: {result.stdout}")
-        print(f"📊 Import stderr: {result.stderr}")
+        print(f" Import stdout: {result.stdout}")
+        print(f" Import stderr: {result.stderr}")
     cleanup_cmds = [
         f'rm -f {sql_filename}',
         f'rm -f {cleaned_csv}',
@@ -1557,7 +1600,7 @@ def import_lead_from_csv(table_name="Lead", preserve_case=True):
     for cmd in cleanup_cmds:
         run_command(cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to import data: {result.stderr if result else 'No result'}")
+        print(f" Failed to import data: {result.stderr if result else 'No result'}")
         return False
     verify_sql = f"SELECT COUNT(*) FROM {pg_table_name};"
     verify_filename = f'verify_{table_name}.sql'
@@ -1566,10 +1609,10 @@ def import_lead_from_csv(table_name="Lead", preserve_case=True):
     verify_cmd = f'docker cp {verify_filename} postgres_target:/tmp/{verify_filename}'
     copy_result = run_command(verify_cmd)
     if not copy_result or copy_result.returncode != 0:
-        print(f"❌ Failed to copy verification file")
+        print(f" Failed to copy verification file")
         return False
     verify_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{verify_filename}'
-    print(f"🔍 Debug: Verification command: {verify_cmd}")
+    print(f"Debug: Verification command: {verify_cmd}")
     verify_result = run_command(verify_cmd)
     run_command(f'rm -f {verify_filename}')
     run_command(f'docker exec postgres_target rm -f /tmp/{verify_filename}')
@@ -1577,11 +1620,60 @@ def import_lead_from_csv(table_name="Lead", preserve_case=True):
         lines = verify_result.stdout.strip().split('\n')
         if len(lines) >= 3:
             count = lines[2].strip()
-            print(f"✅ Successfully imported data. Row count: {count}")
+            print(f" Successfully imported data. Row count: {count}")
             return True
         else:
-            print(f"❌ Unexpected verification output format: {verify_result.stdout}")
+            print(f" Unexpected verification output format: {verify_result.stdout}")
             return False
     else:
-        print(f"❌ Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
+        print(f" Failed to verify import: {verify_result.stderr if verify_result else 'No result'}")
         return False
+
+def advanced_recover_from_log(log_file='ClientConversationTrack_repair_log.txt', output_csv='ClientConversationTrack_advanced_recovered.csv', expected_fields=11):
+    """Attempt to recover rows from the repair log by merging consecutive lines until a valid row is formed (11 fields, first field is integer)."""
+    import csv
+    from io import StringIO
+    recovered_rows = []
+    buffer_lines = []
+    def is_valid_id(val):
+        try:
+            int(val)
+            return True
+        except Exception:
+            return False
+    with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            line = line.rstrip('\n')
+            if line.strip() == '---':
+                # End of a broken row block, try to recover
+                if buffer_lines:
+                    merged = '\n'.join(buffer_lines)
+                    try:
+                        reader = csv.reader(StringIO(merged))
+                        fields = next(reader)
+                        if len(fields) == expected_fields and is_valid_id(fields[0]):
+                            recovered_rows.append(fields)
+                    except Exception:
+                        pass
+                    buffer_lines = []
+                continue
+            if not line.strip():
+                continue
+            buffer_lines.append(line)
+    # Handle any remaining buffer
+    if buffer_lines:
+        merged = '\n'.join(buffer_lines)
+        try:
+            reader = csv.reader(StringIO(merged))
+            fields = next(reader)
+            if len(fields) == expected_fields and is_valid_id(fields[0]):
+                recovered_rows.append(fields)
+        except Exception:
+            pass
+    # Write recovered rows
+    with open(output_csv, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        for row in recovered_rows:
+            writer.writerow(row)
+    print(f"Advanced recovery: {len(recovered_rows)} rows recovered from log. Output: {output_csv}")
+    return output_csv

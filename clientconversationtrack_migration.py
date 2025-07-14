@@ -47,14 +47,14 @@ TABLE_NAME = "ClientConversationTrack"
 
 def get_clientconversationtrack_table_info():
     """Get complete ClientConversationTrack table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f"Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f"Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     
     # Extract DDL
@@ -73,7 +73,7 @@ def get_clientconversationtrack_table_info():
                 break
     
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f"Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -84,7 +84,7 @@ def get_clientconversationtrack_table_info():
     indexes = extract_clientconversationtrack_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_clientconversationtrack_foreign_keys_from_ddl(mysql_ddl)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f"Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_clientconversationtrack_indexes_from_ddl(ddl):
@@ -141,7 +141,7 @@ def extract_clientconversationtrack_foreign_keys_from_ddl(ddl):
 
 def convert_clientconversationtrack_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert ClientConversationTrack table MySQL DDL to PostgreSQL DDL with ClientConversationTrack-specific optimizations"""
-    print(f"🔄 Converting ClientConversationTrack table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f"Converting ClientConversationTrack table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -149,7 +149,7 @@ def convert_clientconversationtrack_mysql_to_postgresql_ddl(mysql_ddl, include_c
     # Extract just the column definitions part
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f"Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     
     columns_part = create_match.group(1)
@@ -195,14 +195,14 @@ def process_clientconversationtrack_column_definition(line, preserve_case):
     if '"email_last_message"' in line or '"sms_last_message"' in line:
         line = re.sub(r'varchar\(191\)', 'TEXT', line)
         line = line.replace('NOT NULL', '')
-        print(f"🔧 Converted message column to TEXT and made nullable")
+        print(f"Converted message column to TEXT and made nullable")
     
     # Handle ENUM types - convert to VARCHAR
     enum_pattern = r'enum\(([^)]+)\)'
     enum_match = re.search(enum_pattern, line, re.IGNORECASE)
     if enum_match:
         line = re.sub(enum_pattern, 'VARCHAR(100)', line, flags=re.IGNORECASE)
-        print(f"🔧 Converted ENUM to VARCHAR for ClientConversationTrack")
+        print(f"Converted ENUM to VARCHAR for ClientConversationTrack")
     
     # Handle tinyint(1) to boolean conversion first
     if 'tinyint(1)' in line:
@@ -210,7 +210,7 @@ def process_clientconversationtrack_column_definition(line, preserve_case):
         # Convert default values for boolean
         line = re.sub(r"DEFAULT\s+'1'", "DEFAULT true", line, flags=re.IGNORECASE)
         line = re.sub(r"DEFAULT\s+'0'", "DEFAULT false", line, flags=re.IGNORECASE)
-        print(f"🔧 Converted tinyint(1) to BOOLEAN for ClientConversationTrack")
+        print(f"Converted tinyint(1) to BOOLEAN for ClientConversationTrack")
     
     # MySQL to PostgreSQL type conversions for ClientConversationTrack
     conversions = [
@@ -270,7 +270,7 @@ def create_clientconversationtrack_table(mysql_ddl):
     if not postgres_ddl:
         return False
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f"Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -280,10 +280,10 @@ def create_clientconversationtrack_table(mysql_ddl):
 def create_clientconversationtrack_indexes(indexes):
     """Create indexes for ClientConversationTrack table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f"No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f"Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     for index in indexes:
@@ -297,20 +297,20 @@ def create_clientconversationtrack_indexes(indexes):
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing index: {index_name}")
+            print(f"Skipping existing index: {index_name}")
             continue
         
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f"Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f"Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f"Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     
     return success
@@ -318,10 +318,10 @@ def create_clientconversationtrack_indexes(indexes):
 def create_clientconversationtrack_foreign_keys(foreign_keys):
     """Create foreign keys for ClientConversationTrack table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f"No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f"Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created_count = 0
     skipped_count = 0
@@ -339,29 +339,29 @@ def create_clientconversationtrack_foreign_keys(foreign_keys):
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing FK: {constraint_name}")
+            print(f"Skipping existing FK: {constraint_name}")
             skipped_count += 1
             continue
         
         # Create the foreign key constraint
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f"Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         
         if success and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f"Created {TABLE_NAME} FK: {constraint_name}")
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f"Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
     
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f"Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def phase1_create_table_and_data():
     """Phase 1: Create ClientConversationTrack table and import data"""
-    print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+    print(f"Phase 1: Creating {TABLE_NAME} table and importing data")
     
     # Get table info from MySQL
     mysql_ddl, indexes, foreign_keys = get_clientconversationtrack_table_info()
@@ -373,7 +373,8 @@ def phase1_create_table_and_data():
         return False
     
     # Use the dedicated CSV import function
-    print("🔄 Using dedicated CSV import for ClientConversationTrack...")
+    print("Using dedicated CSV import for ClientConversationTrack...")
+    robust_export_and_import_data(TABLE_NAME, preserve_case=True, include_id=True, export_only=True)
     if not import_clientconversationtrack_from_csv(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
         return False
     
@@ -385,12 +386,12 @@ def phase1_create_table_and_data():
     if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
         return False
     
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f"Phase 1 complete for {TABLE_NAME}")
     return True
 
 def phase2_create_indexes():
     """Phase 2: Create indexes for ClientConversationTrack table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f"Phase 2: Creating indexes for {TABLE_NAME}")
     
     # Get indexes from MySQL
     mysql_ddl, indexes, foreign_keys = get_clientconversationtrack_table_info()
@@ -401,7 +402,7 @@ def phase2_create_indexes():
 
 def phase3_create_foreign_keys():
     """Phase 3: Create foreign keys for ClientConversationTrack table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f"Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     # Get foreign keys from MySQL
     mysql_ddl, indexes, foreign_keys = get_clientconversationtrack_table_info()
@@ -431,9 +432,9 @@ def main():
                   phase2_create_indexes() and 
                   phase3_create_foreign_keys())
         if success:
-            print("🎉 Operation completed successfully!")
+            print("Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print("Operation failed!")
             exit(1)
         return
     
