@@ -1,1 +1,0 @@
-COPY "Payment" ("id", "date", "notes", "amount", "type", "invoice_id", "company_id", "created_at", "updated_at", "refund_created_at", "refund_method", "refund_reason", "refund_updated_at", "refunded_amount") FROM '/tmp/Payment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

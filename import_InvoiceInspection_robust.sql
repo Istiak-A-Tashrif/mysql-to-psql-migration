@@ -1,1 +1,0 @@
-COPY "InvoiceInspection" ("id", "invoice_id", "title", "driver", "passenger", "notes", "created_at", "updated_at") FROM '/tmp/InvoiceInspection_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

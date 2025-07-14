@@ -1,1 +1,0 @@
-COPY "inventoryWirehouseProduct" ("id", "productName", "category", "unit") FROM '/tmp/inventoryWirehouseProduct_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

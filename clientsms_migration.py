@@ -280,14 +280,14 @@ def create_clientsms_table(mysql_ddl):
     END $$;
     '''
     
-    with open('create_enum.sql', 'w', encoding='utf-8') as f:
+    with open('clientsms_enum.sql', 'w', encoding='utf-8') as f:
         f.write(enum_sql)
     
-    copy_enum_cmd = 'docker cp create_enum.sql postgres_target:/tmp/create_enum.sql'
+    copy_enum_cmd = 'docker cp clientsms_enum.sql postgres_target:/tmp/clientsms_enum.sql'
     result = run_command(copy_enum_cmd)
     
     if result and result.returncode == 0:
-        enum_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_enum.sql'
+        enum_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/clientsms_enum.sql'
         result = run_command(enum_cmd)
         if result and result.returncode == 0:
             print(" Created sentBy enum type")
@@ -509,8 +509,11 @@ def phase1_create_table_and_data():
         # Clean up temporary files
         cleanup_cmds = [
             'rm -f import_clientsms.sql',
+            'rm -f ClientSMS_processed.csv',
+            'rm -f clientsms_enum.sql',
             'docker exec postgres_target rm -f /tmp/ClientSMS_import.csv',
-            'docker exec postgres_target rm -f /tmp/import_clientsms.sql'
+            'docker exec postgres_target rm -f /tmp/import_clientsms.sql',
+            'docker exec postgres_target rm -f /tmp/clientsms_enum.sql'
         ]
         
         for cmd in cleanup_cmds:

@@ -1,1 +1,0 @@
-COPY "Holiday" ("id", "company_id", "date", "month", "year", "created_at", "updated_at") FROM '/tmp/Holiday_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

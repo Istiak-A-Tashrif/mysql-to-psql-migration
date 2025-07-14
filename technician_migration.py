@@ -346,7 +346,7 @@ def create_technician_foreign_keys(foreign_keys):
 
 def import_technician_data_with_constraint_handling():
     """Import Technician data with special handling for constraint issues"""
-    print(f"📥 Importing {TABLE_NAME} data...")
+    print(f" Importing {TABLE_NAME} data...")
     # Export robust CSV only
     robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True, export_only=True)
     # Now use the dedicated cleaner/importer

@@ -1,1 +1,0 @@
-COPY "Vehicle" ("id", "year", "make", "model", "submodel", "type", "transmission", "engineSize", "license", "vin", "notes", "from_request", "from_requested_company_id", "color_id", "customer_id", "company_id", "created_at", "updated_at", "other") FROM '/tmp/Vehicle_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

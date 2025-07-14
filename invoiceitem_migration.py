@@ -339,7 +339,7 @@ def create_invoiceitem_foreign_keys(foreign_keys):
 
 def import_invoiceitem_data_custom():
     """Custom import for InvoiceItem data"""
-    print("📥 Importing InvoiceItem data using custom method...")
+    print(" Importing InvoiceItem data using custom method...")
     
     # Drop existing data
     drop_cmd = 'docker exec postgres_target psql -U postgres -d target_db -c "DELETE FROM \"InvoiceItem\";"'

@@ -1,1 +1,0 @@
-COPY "AppointmentUser" ("id", "appointment_id", "user_id", "eventId", "created_at", "updated_at") FROM '/tmp/AppointmentUser_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

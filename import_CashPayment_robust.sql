@@ -1,1 +1,0 @@
-COPY "CashPayment" ("id", "paymentId", "receivedCash") FROM '/tmp/CashPayment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

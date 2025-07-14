@@ -1,1 +1,0 @@
-COPY "DepositPayment" ("id", "paymentId", "depositMethod", "depositNotes") FROM '/tmp/DepositPayment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -1,1 +1,0 @@
-ALTER TABLE "ClientConversationTrack" ALTER COLUMN id DROP NOT NULL;

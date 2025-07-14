@@ -270,7 +270,7 @@ def create_clientcall_foreign_keys(foreign_keys):
     return True
 
 def phase1_create_table_and_data():
-    print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+    print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
     mysql_ddl, indexes, foreign_keys = get_clientcall_table_info()
     if not mysql_ddl:
         return False

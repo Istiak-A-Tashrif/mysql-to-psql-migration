@@ -603,6 +603,145 @@ def export_and_clean_mysql_data(table_name):
     print(f"Data export configured for {table_name}")
     return table_name  # Return table name to indicate success
 
+def import_clientconversationtrack_with_proper_export(pg_table_name, preserve_case=True, include_id=False):
+    """Import ClientConversationTrack data using CONCAT to create single-line CSV output"""
+    print("Using CONCAT approach for ClientConversationTrack to create proper CSV...")
+    
+    # Use CONCAT to create a single CSV line per record, properly escaping commas and quotes
+    export_cmd = "docker exec mysql_source mysql -u mysql -pmysql source_db -e \"SELECT CONCAT(id, '|', client_id, '|', email_is_read, '|', sms_is_read, '|', email_is_unread_count, '|', sms_unread_count, '|', COALESCE(REPLACE(REPLACE(email_last_message, '|', ' '), CHAR(10), ' '), ''), '|', COALESCE(REPLACE(REPLACE(sms_last_message, '|', ' '), CHAR(10), ' '), ''), '|', created_at, '|', updated_at, '|', COALESCE(send_at, '')) as csv_line FROM ClientConversationTrack ORDER BY id;\" --batch --raw --skip-column-names"
+    
+    result = run_command(export_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"Failed to export ClientConversationTrack data: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Process the pipe-delimited data
+    import tempfile
+    import csv
+    
+    csv_lines = []
+    lines = result.stdout.strip().split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Split by pipe delimiter
+            fields = line.split('|')
+            
+            if len(fields) >= 11:  # We expect 11 fields
+                # Skip ID field if not including it
+                if not include_id:
+                    fields = fields[1:]  # Remove first field (id)
+                
+                # Convert NULL/empty values
+                processed_fields = []
+                for field in fields:
+                    if field == 'NULL' or field == '':
+                        processed_fields.append('')
+                    else:
+                        processed_fields.append(field)
+                
+                # Write as CSV line
+                import io
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(processed_fields)
+                csv_lines.append(output.getvalue().strip())
+    
+    if not csv_lines:
+        print(f"No data lines processed from export. Raw output lines: {len(lines)}")
+        if lines:
+            print(f"First few lines: {lines[:3]}")
+        return False
+    
+    print(f"Processed {len(csv_lines)} data lines")
+    
+    # Write CSV file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+        f.write('\n'.join(csv_lines))
+        temp_file = f.name
+    
+    try:
+        return execute_csv_import(temp_file, pg_table_name, preserve_case, include_id)
+    finally:
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+
+def execute_csv_import(csv_file_path, pg_table_name, preserve_case, include_id):
+    """Execute the CSV import into PostgreSQL"""
+    # Copy to PostgreSQL container
+    import_file_name = 'ClientConversationTrack_import.csv'
+    copy_cmd = f'docker cp "{csv_file_path}" postgres_target:/tmp/{import_file_name}'
+    result = run_command(copy_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"Failed to copy CSV to PostgreSQL container: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Get column list for import
+    if preserve_case:
+        lookup_table_name = "ClientConversationTrack"
+    else:
+        lookup_table_name = "clientconversationtrack"
+    
+    id_filter = "" if include_id else " AND column_name != 'id'"
+    get_columns_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT column_name FROM information_schema.columns WHERE table_name = \'{lookup_table_name}\'{id_filter} ORDER BY ordinal_position;"'
+    col_result = run_command(get_columns_cmd)
+    
+    columns = []
+    if col_result and col_result.returncode == 0:
+        columns = [col.strip() for col in col_result.stdout.strip().split('\n') if col.strip()]
+    
+    # Create COPY command
+    if preserve_case:
+        quoted_columns = [f'"{col}"' for col in columns]
+    else:
+        quoted_columns = columns
+    column_list = ', '.join(quoted_columns)
+    
+    copy_sql = f"COPY {pg_table_name} ({column_list}) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', NULL '', ESCAPE '\"');"
+    
+    # Write SQL to file and execute
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as f:
+        f.write(copy_sql)
+        copy_sql_file = f.name
+    
+    try:
+        # Copy SQL file to container
+        copy_sql_cmd = f'docker cp "{copy_sql_file}" postgres_target:/tmp/import_data.sql'
+        result = run_command(copy_sql_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy SQL file: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Execute the SQL
+        import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_data.sql'
+        result = run_command(import_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to import ClientConversationTrack data: {result.stderr if result else 'No result'}")
+            if result:
+                print(f"Import output: {result.stdout}")
+            return False
+        
+        print(f"Import output: {result.stdout}")
+        print("ClientConversationTrack data imported successfully with mysqldump CSV")
+        return True
+        
+    finally:
+        # Clean up SQL file
+        try:
+            if os.path.exists(copy_sql_file):
+                os.unlink(copy_sql_file)
+        except:
+            pass
+
 def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, include_id=False):
     """Import data to PostgreSQL using direct transfer"""
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
@@ -619,6 +758,10 @@ def import_data_to_postgresql(table_name, data_indicator, preserve_case=True, in
     # Create a temporary SQL file for the copy operation
     import tempfile
     import os
+    
+    # Special handling for tables with text fields that may contain newlines
+    if table_name == "ClientConversationTrack":
+        return import_clientconversationtrack_with_proper_export(pg_table_name, preserve_case, include_id)
     
     # First, get the data in a format we can use
     # Use backticks around table name to handle reserved words like "Lead"
@@ -1449,10 +1592,11 @@ def import_clientconversationtrack_with_custom_parsing(csv_file_path, preserve_c
             print(f"Failed to copy SQL file")
             return False
         
-        exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_custom_csv.sql'
-        print(f"DEBUG: Executing custom import command: {exec_cmd}")
+        # Execute the SQL file
+        import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_custom_csv.sql'
+        print(f"DEBUG: Executing custom import command: {import_cmd}")
         print(f"DEBUG: SQL content: {copy_sql}")
-        exec_result = run_command(exec_cmd)
+        exec_result = run_command(import_cmd)
         
         # Show detailed results
         if exec_result:
@@ -2036,7 +2180,7 @@ def import_mailgunemail_simple_approach(preserve_case=True):
     """
     Simple approach for MailgunEmail - use postgres COPY FROM STDIN with escaped data.
     """
-    print(f"📥 Simple import approach for MailgunEmail...")
+    print(f" Simple import approach for MailgunEmail...")
     
     table_name = "MailgunEmail"
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)

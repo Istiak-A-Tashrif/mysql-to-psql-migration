@@ -372,10 +372,9 @@ def phase1_create_table_and_data():
     if not create_clientconversationtrack_table(mysql_ddl):
         return False
     
-    # Use the dedicated CSV import function
-    print("Using dedicated CSV import for ClientConversationTrack...")
-    robust_export_and_import_data(TABLE_NAME, preserve_case=True, include_id=True, export_only=True)
-    if not import_clientconversationtrack_from_csv(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
+    # Use the standard import function
+    print("Importing ClientConversationTrack data...")
+    if not robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True):
         return False
     
     # Add primary key constraint

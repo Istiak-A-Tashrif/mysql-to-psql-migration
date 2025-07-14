@@ -23,7 +23,7 @@ def fix_unicode_in_file(file_path):
         # Remove common Unicode emojis and symbols
         content = re.sub(r'', '', content)  # magnifying glass
         content = re.sub(r'📊', '', content)  # bar chart
-        content = re.sub(r'🚀', '', content)  # rocket
+        content = re.sub(r'', '', content)  # rocket
         content = re.sub(r'✅', '', content)  # check mark
         content = re.sub(r'❌', '', content)  # cross mark
         content = re.sub(r'⚠️', '', content)  # warning

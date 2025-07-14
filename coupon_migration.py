@@ -388,7 +388,7 @@ def create_coupon_foreign_keys(foreign_keys):
 
 def import_coupon_data_custom():
     """Custom import for Coupon data"""
-    print("📥 Importing Coupon data using custom method...")
+    print(" Importing Coupon data using custom method...")
     
     # Drop existing data
     drop_cmd = 'docker exec postgres_target psql -U postgres -d target_db -c "DELETE FROM \"Coupon\";"'

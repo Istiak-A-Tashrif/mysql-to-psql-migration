@@ -1,1 +1,0 @@
-COPY "CompanyJoin" ("id", "companyOneId", "companyTwoId", "created_at", "updated_at") FROM '/tmp/CompanyJoin_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

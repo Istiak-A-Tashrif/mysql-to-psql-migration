@@ -1,1 +1,0 @@
-COPY "Fleet" ("id", "client_id", "fleetName", "contactName", "preferred_payment_term", "created_at", "updated_at") FROM '/tmp/Fleet_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

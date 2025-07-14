@@ -1,1 +1,0 @@
-COPY "CheckPayment" ("id", "paymentId", "checkNumber") FROM '/tmp/CheckPayment_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -1,1 +1,0 @@
-UPDATE "ClientConversationTrack" SET id = nextval('"ClientConversationTrack_id_seq"') WHERE id IS NULL; ALTER TABLE "ClientConversationTrack" ALTER COLUMN id SET NOT NULL;

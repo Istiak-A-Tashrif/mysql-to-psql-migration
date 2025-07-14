@@ -1,1 +1,0 @@
-COPY "Column" ("id", "title", "type", "order", "textColor", "bgColor", "company_id") FROM '/tmp/Column_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

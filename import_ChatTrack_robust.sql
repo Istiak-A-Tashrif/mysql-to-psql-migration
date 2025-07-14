@@ -1,1 +1,0 @@
-COPY "ChatTrack" ("id", "lastMessage", "isRead", "sender_id", "receiver_id", "message_id", "createdAt", "updated_at", "section") FROM '/tmp/ChatTrack_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

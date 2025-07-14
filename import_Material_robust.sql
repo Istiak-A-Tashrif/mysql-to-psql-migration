@@ -1,1 +1,0 @@
-COPY "Material" ("id", "name", "vendor_id", "category_id", "notes", "quantity", "cost", "sell", "discount", "company_id", "invoice_id", "invoice_item_id", "product_id", "created_at", "updated_at") FROM '/tmp/Material_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -1,1 +1,0 @@
-COPY "Labor" ("id", "name", "category_id", "notes", "hours", "charge", "discount", "company_id", "canned_labor", "created_at", "updated_at") FROM '/tmp/Labor_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');

@@ -1,1 +1,0 @@
-COPY "Notification" ("id", "user_id", "company_id", "type", "title", "description", "is_unread", "avatarUrl", "redirectUrl", "created_at", "updated_at") FROM '/tmp/Notification_robust_import.csv' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');
