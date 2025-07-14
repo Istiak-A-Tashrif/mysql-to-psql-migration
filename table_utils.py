@@ -1168,7 +1168,7 @@ def import_data_with_serial_id_setup(table_name, preserve_case=True):
     2. Get max ID from imported data
     3. Set sequence to max_id + 1 for future inserts
     """
-    print(f"📥 Importing {table_name} data with SERIAL ID setup...")
+    print(f" Importing {table_name} data with SERIAL ID setup...")
     
     # Step 1: Import data excluding ID column
     print(f"Step 1: Importing data (excluding ID column)...")
@@ -1749,3 +1749,758 @@ def create_postgresql_table_with_enums(table_name, postgres_ddl, preserve_case=T
     
     # Now create the table with converted DDL
     return create_postgresql_table(table_name, converted_ddl, preserve_case)
+
+def import_mailgunemail_with_enum_handling(preserve_case=True):
+    """
+    Custom import function for MailgunEmail to handle empty ENUM values.
+    The emailBy column has ENUM('Client','Company') but some records have empty strings.
+    """
+    print(f" Custom import for MailgunEmail with ENUM handling")
+    
+    table_name = "MailgunEmail"
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Export data from MySQL first
+    get_data_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT * FROM `{table_name}`;" -B --skip-column-names'''
+    result = run_command(get_data_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"Failed to retrieve data: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Process each row and fix ENUM issues
+    import csv
+    import tempfile
+    from io import StringIO
+    
+    lines = result.stdout.strip().split('\n')
+    clean_rows = []
+    
+    for i, line in enumerate(lines):
+        if line.strip():
+            fields = line.split('\t')
+            
+            # Expected columns: id, subject, TEXT, emailBy, companyId, clientId, createdAt, messageId
+            if len(fields) >= 8:
+                # Fix the emailBy field (index 3) - convert empty strings to a default value
+                if fields[3] == '' or fields[3] == 'NULL' or not fields[3]:
+                    fields[3] = 'Company'  # Default to 'Company' for empty emailBy values
+                elif fields[3] not in ['Client', 'Company']:
+                    print(f"Warning: Invalid emailBy value '{fields[3]}' in row {i+1}, setting to 'Company'")
+                    fields[3] = 'Company'
+                
+                # Handle other fields
+                for j in range(len(fields)):
+                    if fields[j] == 'NULL':
+                        fields[j] = ''
+                
+                # Exclude the ID column (first field) for import
+                clean_rows.append(fields[1:])  # Skip fields[0] which is the id
+            else:
+                print(f"Warning: Row {i+1} has {len(fields)} fields, expected at least 8")
+    
+    print(f"Processed {len(clean_rows)} rows for MailgunEmail import")
+    
+    # Write to temporary CSV file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as temp_csv:
+        temp_csv_path = temp_csv.name
+        writer = csv.writer(temp_csv, quoting=csv.QUOTE_MINIMAL)
+        
+        for row in clean_rows:
+            # Clean and quote fields as needed
+            clean_row = []
+            for field in row:
+                if field == '':
+                    clean_row.append('')  # Empty string for NULL/empty
+                else:
+                    clean_row.append(field)
+            writer.writerow(clean_row)
+    
+    try:
+        # Copy CSV to PostgreSQL container
+        import_file_name = f'{table_name}_cleaned_import.csv'
+        copy_cmd = f'docker cp "{temp_csv_path}" postgres_target:/tmp/{import_file_name}'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy CSV to PostgreSQL container: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Get column names for COPY command (excluding id)
+        columns = ['subject', 'TEXT', 'emailBy', 'companyId', 'clientId', 'createdAt', 'messageId']
+        if preserve_case:
+            quoted_columns = [f'"{col}"' for col in columns]
+        else:
+            quoted_columns = columns
+        column_list = ', '.join(quoted_columns)
+        
+        # Create COPY command
+        copy_sql = f"COPY {pg_table_name} ({column_list}) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', NULL '');"
+        
+        # Execute the import
+        success, result = execute_postgresql_sql(copy_sql, f"{table_name} data import")
+        
+        if success and result and "COPY" in result.stdout:
+            imported_count = result.stdout.split("COPY")[1].strip().split()[0]
+            print(f"Successfully imported {imported_count} records to {table_name}")
+            return True
+        else:
+            print(f"Failed to import {table_name} data")
+            if result:
+                print(f"Error: {result.stderr}")
+            return False
+            
+    finally:
+        # Clean up temporary file
+        try:
+            os.unlink(temp_csv_path)
+        except:
+            pass
+
+def import_mailgunemail_with_csv_export(preserve_case=True):
+    """
+    Custom import function for MailgunEmail using proper CSV export to handle multi-line TEXT fields.
+    The issue is that the TEXT field contains newlines that break tab-separated parsing.
+    """
+    print(f" Custom CSV export and import for MailgunEmail...")
+    
+    table_name = "MailgunEmail"
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Export data from MySQL using CSV format with proper escaping
+    import tempfile
+    import os
+    
+    # Initialize variables for cleanup
+    temp_export_path = None
+    temp_csv_path = None
+    
+    # Create temporary CSV file for export
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as temp_export:
+        temp_export_path = temp_export.name
+    
+    try:
+        # Export data from MySQL using SELECT INTO OUTFILE equivalent via mysql command
+        # This properly handles multi-line fields and escaping
+        export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "
+SELECT id, subject, TEXT, emailBy, companyId, clientId, createdAt, messageId 
+FROM MailgunEmail 
+ORDER BY id
+" -B --raw --skip-column-names'''
+        
+        result = run_command(export_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to export MailgunEmail data: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Parse the tab-separated output more carefully
+        lines = result.stdout.split('\n')
+        valid_rows = []
+        
+        for i, line in enumerate(lines):
+            if line.strip():
+                # Split on tabs
+                fields = line.split('\t')
+                
+                if len(fields) >= 8:  # We expect 8 fields
+                    # Clean up the fields
+                    cleaned_fields = []
+                    for j, field in enumerate(fields):
+                        if field == 'NULL' or field == '\\N':
+                            cleaned_fields.append('')
+                        elif j == 3:  # emailBy field - fix empty ENUM values
+                            if field == '' or field not in ['Client', 'Company']:
+                                cleaned_fields.append('Company')  # Default value
+                            else:
+                                cleaned_fields.append(field)
+                        else:
+                            # Escape any quotes in the field
+                            field = field.replace('"', '""')
+                            cleaned_fields.append(field)
+                    
+                    # Only take first 8 fields to avoid extra tabs in TEXT content
+                    valid_rows.append(cleaned_fields[:8])
+                    
+                elif len(fields) > 1:  # Could be a continuation of a multi-line field
+                    # Try to reconstruct the row by looking for ID pattern at start
+                    if i > 0 and fields[0].isdigit():
+                        # This looks like a new valid row with ID
+                        cleaned_fields = []
+                        for j, field in enumerate(fields[:8]):  # Limit to 8 fields
+                            if field == 'NULL' or field == '\\N':
+                                cleaned_fields.append('')
+                            elif j == 3:  # emailBy field
+                                if field == '' or field not in ['Client', 'Company']:
+                                    cleaned_fields.append('Company')
+                                else:
+                                    cleaned_fields.append(field)
+                            else:
+                                field = field.replace('"', '""')
+                                cleaned_fields.append(field)
+                        
+                        # Pad to 8 fields if needed
+                        while len(cleaned_fields) < 8:
+                            cleaned_fields.append('')
+                        
+                        valid_rows.append(cleaned_fields[:8])
+        
+        print(f"Extracted {len(valid_rows)} valid rows from MySQL export")
+        
+        if len(valid_rows) == 0:
+            print("No valid rows found in MailgunEmail export")
+            return False
+        
+        # Write to CSV file for PostgreSQL import
+        import csv
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as temp_csv:
+            temp_csv_path = temp_csv.name
+            writer = csv.writer(temp_csv, quoting=csv.QUOTE_MINIMAL)
+            
+            for row in valid_rows:
+                # Skip the ID column (first column) for SERIAL auto-increment
+                writer.writerow(row[1:])  # Skip row[0] which is the id
+        
+        # Copy CSV to PostgreSQL container
+        import_file_name = f'{table_name}_csv_import.csv'
+        copy_cmd = f'docker cp "{temp_csv_path}" postgres_target:/tmp/{import_file_name}'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy CSV to PostgreSQL container: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Get column names for COPY command (excluding id)
+        columns = ['subject', 'TEXT', 'emailBy', 'companyId', 'clientId', 'createdAt', 'messageId']
+        if preserve_case:
+            quoted_columns = [f'"{col}"' for col in columns]
+        else:
+            quoted_columns = columns
+        column_list = ', '.join(quoted_columns)
+        
+        # Create COPY command with proper NULL handling
+        copy_sql = f"COPY {pg_table_name} ({column_list}) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', NULL '', ESCAPE '\"');"
+        
+        # Execute COPY command
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as temp_sql:
+            temp_sql.write(copy_sql)
+            temp_sql_path = temp_sql.name
+        
+        try:
+            # Copy SQL file to container
+            copy_sql_cmd = f'docker cp "{temp_sql_path}" postgres_target:/tmp/import_mailgunemail_csv.sql'
+            result = run_command(copy_sql_cmd)
+            
+            if not result or result.returncode != 0:
+                print(f"Failed to copy SQL file: {result.stderr if result else 'No result'}")
+                return False
+            
+            # Execute the SQL file
+            import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_mailgunemail_csv.sql'
+            result = run_command(import_cmd)
+            
+            if not result or result.returncode != 0:
+                print(f"Failed to import MailgunEmail data: {result.stderr if result else 'No result'}")
+                if result and result.stdout:
+                    print(f"Import output: {result.stdout}")
+                return False
+            
+            if result.stdout:
+                print(f"Import output: {result.stdout}")
+            
+            print(f"✅ MailgunEmail data imported successfully with CSV export method")
+            return True
+            
+        finally:
+            # Clean up SQL file
+            try:
+                if os.path.exists(temp_sql_path):
+                    os.unlink(temp_sql_path)
+            except:
+                pass
+        
+    finally:
+        # Clean up CSV files
+        try:
+            if temp_export_path and os.path.exists(temp_export_path):
+                os.unlink(temp_export_path)
+        except:
+            pass
+        try:
+            if temp_csv_path and os.path.exists(temp_csv_path):
+                os.unlink(temp_csv_path)
+        except:
+            pass
+
+def import_mailgunemail_simple_approach(preserve_case=True):
+    """
+    Simple approach for MailgunEmail - use postgres COPY FROM STDIN with escaped data.
+    """
+    print(f"📥 Simple import approach for MailgunEmail...")
+    
+    table_name = "MailgunEmail"
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Get data from MySQL using simple CONCAT to avoid newline issues
+    get_data_cmd = f'''docker exec mysql_source mysql -u root -prootpass source_db -e "
+SELECT CONCAT(
+    COALESCE(subject, ''), ';',
+    COALESCE(REPLACE(REPLACE(TEXT, CHAR(13), ' '), CHAR(10), ' '), ''), ';',
+    COALESCE(NULLIF(emailBy, ''), 'Company'), ';',
+    COALESCE(companyId, 0), ';',
+    COALESCE(clientId, 0), ';',
+    COALESCE(createdAt, '2025-01-01 00:00:00.000'), ';',
+    COALESCE(messageId, '')
+) as row_data
+FROM MailgunEmail 
+ORDER BY id" -B --skip-column-names'''
+    
+    result = run_command(get_data_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"Failed to retrieve MailgunEmail data: {result.stderr if result else 'No result'}")
+        if result:
+            print(f"Command output: {result.stdout[:500]}")
+        return False
+    
+    lines = result.stdout.strip().split('\n')
+    valid_rows = []
+    
+    print(f"Raw output lines: {len(lines)}")
+    for i, line in enumerate(lines[:3]):  # Debug first 3 lines
+        print(f"Line {i+1}: {line}")
+    
+    for line in lines:
+        if line.strip() and ';' in line:  # Make sure it has semicolon separators
+            # Split on semicolons
+            fields = line.split(';')
+            if len(fields) >= 7:
+                # Clean up the fields
+                cleaned_fields = []
+                for j, field in enumerate(fields[:7]):  # Take only first 7 fields
+                    if field == 'NULL' or field == '\\N':
+                        cleaned_fields.append('')
+                    else:
+                        # Escape any special characters for CSV
+                        field = field.replace('"', '""')
+                        cleaned_fields.append(field)
+                
+                valid_rows.append(cleaned_fields)
+    
+    print(f"Found {len(valid_rows)} valid rows for MailgunEmail")
+    
+    if len(valid_rows) == 0:
+        print("No valid rows to import for MailgunEmail")
+        return False
+    
+    # Show first few rows for debugging
+    for i, row in enumerate(valid_rows[:3]):
+        print(f"Row {i+1}: {row}")
+    
+    # Write to temporary CSV file
+    import csv
+    import tempfile
+    import os
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as temp_csv:
+        temp_csv_path = temp_csv.name
+        writer = csv.writer(temp_csv, quoting=csv.QUOTE_MINIMAL)
+        
+        for row in valid_rows:
+            writer.writerow(row)
+    
+    try:
+        # Copy CSV to PostgreSQL container
+        import_file_name = f'{table_name}_simple_import.csv'
+        copy_cmd = f'docker cp "{temp_csv_path}" postgres_target:/tmp/{import_file_name}'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy CSV to PostgreSQL container: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Get column names for COPY command (excluding id)
+        columns = ['subject', 'TEXT', 'emailBy', 'companyId', 'clientId', 'createdAt', 'messageId']
+        if preserve_case:
+            quoted_columns = [f'"{col}"' for col in columns]
+        else:
+            quoted_columns = columns
+        column_list = ', '.join(quoted_columns)
+        
+        # Create COPY command
+        copy_sql = f"COPY {pg_table_name} ({column_list}) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '\"', NULL '', ESCAPE '\"');"
+        
+        # Execute COPY command
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as temp_sql:
+            temp_sql.write(copy_sql)
+            temp_sql_path = temp_sql.name
+        
+        try:
+            # Copy SQL file to container
+            copy_sql_cmd = f'docker cp "{temp_sql_path}" postgres_target:/tmp/import_mailgunemail_simple.sql'
+            result = run_command(copy_sql_cmd)
+            
+            if not result or result.returncode != 0:
+                print(f"Failed to copy SQL file: {result.stderr if result else 'No result'}")
+                return False
+            
+            # Execute the SQL file
+            import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_mailgunemail_simple.sql'
+            result = run_command(import_cmd)
+            
+            if not result or result.returncode != 0:
+                print(f"Failed to import MailgunEmail data: {result.stderr if result else 'No result'}")
+                if result and result.stdout:
+                    print(f"Import output: {result.stdout}")
+                return False
+            
+            if result.stdout:
+                print(f"Import output: {result.stdout}")
+            
+            print(f"✅ MailgunEmail data imported successfully with simple approach")
+            return True
+            
+        finally:
+            # Clean up SQL file
+            try:
+                if os.path.exists(temp_sql_path):
+                    os.unlink(temp_sql_path)
+            except:
+                pass
+        
+    finally:
+        # Clean up CSV file
+        try:
+            if os.path.exists(temp_csv_path):
+                os.unlink(temp_csv_path)
+        except:
+            pass
+
+def fix_mailgunemail_enum_values(preserve_case=True):
+    """
+    Fix any empty ENUM values in MailgunEmail after import by updating them to 'Company'.
+    """
+    print(f"🔧 Fixing empty ENUM values in MailgunEmail...")
+    
+    table_name = "MailgunEmail"
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # Update any rows where emailBy is empty or null to 'Company'
+    update_sql = f"""
+UPDATE {pg_table_name} 
+SET \"emailBy\" = 'Company' 
+WHERE \"emailBy\" = '' OR \"emailBy\" IS NULL;
+"""
+    
+    # Write to file and execute
+    import tempfile
+    import os
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as temp_sql:
+        temp_sql.write(update_sql)
+        temp_sql_path = temp_sql.name
+    
+    try:
+        # Copy SQL file to container
+        copy_cmd = f'docker cp "{temp_sql_path}" postgres_target:/tmp/fix_mailgunemail_enum.sql'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy fix SQL file: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Execute the SQL file
+        exec_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/fix_mailgunemail_enum.sql'
+        result = run_command(exec_cmd)
+        
+        if result and result.returncode == 0:
+            print(f"✅ Fixed ENUM values in MailgunEmail")
+            if result.stdout:
+                print(f"Update result: {result.stdout}")
+            return True
+        else:
+            print(f"Failed to fix ENUM values: {result.stderr if result else 'No result'}")
+            return False
+    
+    finally:
+        # Clean up SQL file
+        try:
+            if os.path.exists(temp_sql_path):
+                os.unlink(temp_sql_path)
+        except:
+            pass
+
+def fix_mailgunemail_with_direct_sql(preserve_case=True):
+    """
+    Fix MailgunEmail import using direct SQL INSERT statements to avoid CSV parsing issues.
+    """
+    print(f"🔧 Fixing MailgunEmail with direct SQL approach")
+    
+    table_name = "MailgunEmail"
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # First, get the raw data from MySQL
+    get_data_cmd = '''docker exec mysql_source mysql -u root -prootpass source_db -e "SELECT id, subject, TEXT, emailBy, companyId, clientId, createdAt, messageId FROM MailgunEmail ORDER BY id" -B --skip-column-names'''
+    
+    result = run_command(get_data_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"Failed to get MailgunEmail data: {result.stderr if result else 'No result'}")
+        print(f"Command was: {get_data_cmd}")
+        return False
+    
+    # Parse the raw data and create INSERT statements in Python
+    lines = result.stdout.strip().split('\n')
+    valid_inserts = []
+    
+    print(f"Got {len(lines)} data rows from MySQL")
+    
+    for line_num, line in enumerate(lines):
+        if not line.strip():
+            continue
+            
+        # Split by tabs (MySQL -B output uses tabs)
+        parts = line.split('\t')
+        if len(parts) < 8:
+            print(f"Skipping line {line_num}: insufficient columns ({len(parts)})")
+            continue
+            
+        try:
+            id_val, subject, text, email_by, company_id, client_id, created_at, message_id = parts[:8]
+            
+            # Clean and quote values
+            subject = subject.replace("'", "''") if subject and subject != 'NULL' else ''
+            text = text.replace("'", "''").replace('\n', ' ').replace('\r', ' ') if text and text != 'NULL' else ''
+            email_by = email_by if email_by and email_by != 'NULL' else 'Company'
+            company_id = company_id if company_id and company_id != 'NULL' else '0'
+            client_id = client_id if client_id and client_id != 'NULL' else '0'
+            created_at = created_at if created_at and created_at != 'NULL' else '2025-01-01 00:00:00.000'
+            message_id = message_id.replace("'", "''") if message_id and message_id != 'NULL' else ''
+            
+            # Create INSERT statement
+            insert_stmt = f"""INSERT INTO {pg_table_name} ("subject", "TEXT", "emailBy", "companyId", "clientId", "createdAt", "messageId") VALUES ('{subject}', '{text}', '{email_by}', {company_id}, {client_id}, '{created_at}', '{message_id}');"""
+            
+            valid_inserts.append(insert_stmt)
+            
+        except Exception as e:
+            print(f"Error processing line {line_num}: {e}")
+            continue
+    
+    print(f"Generated {len(valid_inserts)} INSERT statements for MailgunEmail")
+    
+    if len(valid_inserts) == 0:
+        print("No valid INSERT statements generated")
+        return False
+    
+    # Write INSERT statements to SQL file
+    import tempfile
+    import os
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as temp_sql:
+        temp_sql_path = temp_sql.name
+        
+        # Write all INSERT statements
+        for insert_stmt in valid_inserts:
+            temp_sql.write(insert_stmt + '\n')
+    
+    try:
+        # Copy SQL file to PostgreSQL container
+        import_file_name = f'{table_name}_direct_inserts.sql'
+        copy_cmd = f'docker cp "{temp_sql_path}" postgres_target:/tmp/{import_file_name}'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy SQL file to PostgreSQL container: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Execute the SQL file
+        import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{import_file_name}'
+        result = run_command(import_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to execute MailgunEmail INSERT statements: {result.stderr if result else 'No result'}")
+            if result and result.stdout:
+                print(f"SQL output: {result.stdout}")
+            return False
+        
+        if result.stdout:
+            print(f"SQL execution output: {result.stdout}")
+        
+        print(f"✅ MailgunEmail data imported successfully with direct SQL approach")
+        return True
+        
+    finally:
+        # Clean up SQL file
+        try:
+            if os.path.exists(temp_sql_path):
+                os.unlink(temp_sql_path)
+        except:
+            pass
+
+def fix_marketingautomationrule_with_json_handling(preserve_case=True):
+    """
+    Fix MarketingAutomationRule import by properly handling JSON fields and ENUM values.
+    """
+    print(f"🔧 Fixing MarketingAutomationRule with JSON handling")
+    
+    table_name = "MarketingAutomationRule"
+    pg_table_name = get_postgresql_table_name(table_name, preserve_case)
+    
+    # First, get the raw data from MySQL
+    get_data_cmd = '''docker exec mysql_source mysql -u root -prootpass source_db -e "SELECT id, companyId, target, targetCondition, DATE, startTime, isAppointmentCreated, vehicleMinYear, vehicleMaxYear, vehicleBrand, vehicleModel, communicationType, emailSubject, emailBody, smsBody, isPaused, createdBy, isActive, createdAt, updatedAt FROM MarketingAutomationRule ORDER BY id" -B --skip-column-names'''
+    
+    result = run_command(get_data_cmd)
+    
+    if not result or result.returncode != 0:
+        print(f"Failed to get MarketingAutomationRule data: {result.stderr if result else 'No result'}")
+        return False
+    
+    # Parse the raw data and create INSERT statements in Python
+    lines = result.stdout.strip().split('\n')
+    valid_inserts = []
+    
+    print(f"Got {len(lines)} data rows from MySQL")
+    
+    for line_num, line in enumerate(lines):
+        if not line.strip():
+            continue
+            
+        # Split by tabs (MySQL -B output uses tabs) but be careful with JSON fields
+        parts = line.split('\t')
+        if len(parts) < 20:
+            print(f"Skipping line {line_num}: insufficient columns ({len(parts)}) - Line: {line[:100]}")
+            continue
+            
+        try:
+            # Skip ID field and process others
+            company_id = parts[1] if parts[1] != 'NULL' else '0'
+            
+            # Handle JSON target field - convert MySQL escaped JSON to PostgreSQL JSON
+            if parts[2] != 'NULL':
+                json_target = parts[2]
+                # Remove outer quotes if present
+                if json_target.startswith('"') and json_target.endswith('"'):
+                    json_target = json_target[1:-1]
+                # Handle multiple levels of escaping that can occur in MySQL exports
+                # Replace \\" with " repeatedly until no more changes
+                prev = ""
+                while prev != json_target:
+                    prev = json_target
+                    json_target = json_target.replace('\\"', '"')
+                # For PostgreSQL, use single quotes 
+                target = f"'{json_target}'"
+            else:
+                target = "'[]'"
+                
+            target_condition = f"'{parts[3]}'" if parts[3] != 'NULL' else "'ALL_CLIENTS_THIS_MONTH'"
+            date_val = f"'{parts[4]}'" if parts[4] != 'NULL' else "'2025-01-01 00:00:00.000'"
+            start_time = f"'{parts[5]}'" if parts[5] != 'NULL' else "'2025-01-01 00:00:00.000'"
+            
+            # Handle boolean fields properly for PostgreSQL
+            is_appointment_created = 'true' if parts[6] in ['1', 'true'] else 'false'
+            
+            vehicle_min_year = f"'{parts[7]}'" if parts[7] != 'NULL' and parts[7] else 'NULL'
+            vehicle_max_year = f"'{parts[8]}'" if parts[8] != 'NULL' and parts[8] else 'NULL'
+            vehicle_brand = f"'{parts[9]}'" if parts[9] != 'NULL' and parts[9] else 'NULL'
+            vehicle_model = f"'{parts[10]}'" if parts[10] != 'NULL' and parts[10] else 'NULL'
+            communication_type = f"'{parts[11]}'" if parts[11] != 'NULL' else "'SMS'"
+            
+            # Handle email subject with proper escaping
+            if parts[12] != 'NULL' and parts[12]:
+                email_subject = f"'{parts[12].replace(chr(39), chr(39)+chr(39))}'"  # Escape single quotes
+            else:
+                email_subject = 'NULL'
+                
+            # Handle email body with proper escaping and newline removal
+            if parts[13] != 'NULL' and parts[13]:
+                clean_body = parts[13].replace('\n', ' ').replace('\r', ' ').replace(chr(39), chr(39)+chr(39))
+                email_body = f"'{clean_body}'"
+            else:
+                email_body = 'NULL'
+                
+            # Handle SMS body with proper escaping and newline removal
+            if parts[14] != 'NULL' and parts[14]:
+                clean_sms = parts[14].replace('\n', ' ').replace('\r', ' ').replace(chr(39), chr(39)+chr(39))
+                sms_body = f"'{clean_sms}'"
+            else:
+                sms_body = 'NULL'
+            
+            is_paused = 'true' if parts[15] in ['1', 'true'] else 'false'
+            created_by = f"'{parts[16]}'" if parts[16] != 'NULL' and parts[16] else "'system'"
+            is_active = 'true' if parts[17] in ['1', 'true'] else 'false'
+            created_at = f"'{parts[18]}'" if parts[18] != 'NULL' else "'2025-01-01 00:00:00.000'"
+            updated_at = f"'{parts[19]}'" if parts[19] != 'NULL' else "'2025-01-01 00:00:00.000'"
+            
+            # Create INSERT statement with proper JSON handling
+            insert_stmt = f"""INSERT INTO {pg_table_name} ("companyId", "target", "targetCondition", "DATE", "startTime", "isAppointmentCreated", "vehicleMinYear", "vehicleMaxYear", "vehicleBrand", "vehicleModel", "communicationType", "emailSubject", "emailBody", "smsBody", "isPaused", "createdBy", "isActive", "createdAt", "updatedAt") VALUES ({company_id}, {target}, {target_condition}, {date_val}, {start_time}, {is_appointment_created}, {vehicle_min_year}, {vehicle_max_year}, {vehicle_brand}, {vehicle_model}, {communication_type}, {email_subject}, {email_body}, {sms_body}, {is_paused}, {created_by}, {is_active}, {created_at}, {updated_at});"""
+            
+            valid_inserts.append(insert_stmt)
+            
+        except Exception as e:
+            print(f"Error processing line {line_num}: {e}")
+            print(f"Line content: {line}")
+            continue
+    
+    print(f"Generated {len(valid_inserts)} INSERT statements for MarketingAutomationRule")
+    
+    if len(valid_inserts) == 0:
+        print("No valid INSERT statements generated")
+        return False
+    
+    # Show first INSERT statement for debugging
+    if valid_inserts:
+        print(f"Sample INSERT: {valid_inserts[0][:200]}...")
+    
+    # Write INSERT statements to SQL file
+    import tempfile
+    import os
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as temp_sql:
+        temp_sql_path = temp_sql.name
+        
+        # Write all INSERT statements
+        for insert_stmt in valid_inserts:
+            temp_sql.write(insert_stmt + '\n')
+    
+    try:
+        # Copy SQL file to PostgreSQL container
+        import_file_name = f'{table_name}_json_inserts.sql'
+        copy_cmd = f'docker cp "{temp_sql_path}" postgres_target:/tmp/{import_file_name}'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy SQL file to PostgreSQL container: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Execute the SQL file
+        import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{import_file_name}'
+        result = run_command(import_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to execute MarketingAutomationRule INSERT statements: {result.stderr if result else 'No result'}")
+            if result and result.stdout:
+                print(f"SQL output: {result.stdout}")
+            
+            # Also try to check what's in the SQL file
+            check_file_cmd = f'docker exec postgres_target head -5 /tmp/{import_file_name}'
+            check_result = run_command(check_file_cmd)
+            if check_result:
+                print(f"SQL file contents (first 5 lines): {check_result.stdout}")
+            
+            return False
+        
+        if result.stdout:
+            print(f"SQL execution output: {result.stdout}")
+        if result.stderr:
+            print(f"SQL execution stderr: {result.stderr}")
+        
+        print(f"✅ MarketingAutomationRule data imported successfully with JSON handling")
+        return True
+        
+    finally:
+        # Clean up SQL file
+        try:
+            if os.path.exists(temp_sql_path):
+                os.unlink(temp_sql_path)
+        except:
+            pass

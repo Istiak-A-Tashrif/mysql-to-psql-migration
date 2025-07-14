@@ -369,8 +369,9 @@ def main():
         if not create_mailgunemail_table(mysql_ddl):
             success = False
         else:
-            data_indicator = export_and_clean_mysql_data(TABLE_NAME)
-            import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
+            # Use direct SQL INSERT approach to avoid CSV parsing issues
+            from table_utils import fix_mailgunemail_with_direct_sql
+            fix_mailgunemail_with_direct_sql(PRESERVE_MYSQL_CASE)
             add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
             setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
             print(f" Phase 1 complete for {TABLE_NAME}")

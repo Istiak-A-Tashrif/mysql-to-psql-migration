@@ -31,11 +31,13 @@ from table_utils import (
     verify_table_structure,
     run_command,
     create_postgresql_table,
+    create_postgresql_table_with_enums,
     export_and_clean_mysql_data,
     import_data_to_postgresql,
     add_primary_key_constraint,
     setup_auto_increment_sequence,
-    execute_postgresql_sql
+    execute_postgresql_sql,
+    fix_marketingautomationrule_with_json_handling
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -260,7 +262,7 @@ def create_marketingautomationrule_table(mysql_ddl):
     print(postgres_ddl)
     print("=" * 50)
     
-    return create_postgresql_table(TABLE_NAME, postgres_ddl, PRESERVE_MYSQL_CASE)
+    return create_postgresql_table_with_enums(TABLE_NAME, postgres_ddl, PRESERVE_MYSQL_CASE)
 
 def create_marketingautomationrule_indexes(indexes):
     """Create indexes for MarketingAutomationRule table"""
@@ -368,8 +370,10 @@ def main():
         if not create_marketingautomationrule_table(mysql_ddl):
             success = False
         else:
-            data_indicator = export_and_clean_mysql_data(TABLE_NAME)
-            import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
+            # Use direct SQL approach for MarketingAutomationRule to handle JSON data properly
+            if not fix_marketingautomationrule_with_json_handling(PRESERVE_MYSQL_CASE):
+                print(f"Failed to import data using direct SQL approach")
+                success = False
             add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
             setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
             print(f" Phase 1 complete for {TABLE_NAME}")
