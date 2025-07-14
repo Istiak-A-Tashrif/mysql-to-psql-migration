@@ -37,7 +37,8 @@ from table_utils import (
     setup_auto_increment_sequence,
     execute_postgresql_sql,
     import_data_with_serial_id_setup,
-    robust_export_and_import_data
+    robust_export_and_import_data,
+    import_depositpayment_with_null_handling
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -370,15 +371,11 @@ def main():
         if not create_depositpayment_table(mysql_ddl):
             success = False
         else:
-            # First try robust export/import for NULL handling
-            if robust_export_and_import_data(TABLE_NAME, PRESERVE_MYSQL_CASE, export_only=True):
-                # Then use SERIAL ID import
-                if import_data_to_postgresql(TABLE_NAME, True, PRESERVE_MYSQL_CASE, include_id=False):
-                    add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
-                    setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
-                    print(f" Phase 1 complete for {TABLE_NAME}")
-                else:
-                    success = False
+            # Use special NULL handling for DepositPayment
+            if import_depositpayment_with_null_handling(TABLE_NAME, PRESERVE_MYSQL_CASE):
+                add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
+                setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
+                print(f" Phase 1 complete for {TABLE_NAME}")
             else:
                 success = False
     

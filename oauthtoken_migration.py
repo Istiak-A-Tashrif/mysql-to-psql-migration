@@ -40,7 +40,7 @@ from table_utils import (
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
 PRESERVE_MYSQL_CASE = True
-TABLE_NAME = "OauthToken"
+TABLE_NAME = "OAuthToken"  # Note: correct case in MySQL
 
 def get_oauthtoken_table_info():
     """Get complete OauthToken table information from MySQL including constraints"""

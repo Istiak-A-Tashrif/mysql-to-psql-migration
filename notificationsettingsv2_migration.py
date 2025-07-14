@@ -31,6 +31,7 @@ from table_utils import (
     verify_table_structure,
     run_command,
     create_postgresql_table,
+    create_postgresql_table_with_enums,
     export_and_clean_mysql_data,
     import_data_to_postgresql,
     add_primary_key_constraint,
@@ -260,7 +261,7 @@ def create_notificationsettingsv2_table(mysql_ddl):
     print(postgres_ddl)
     print("=" * 50)
     
-    return create_postgresql_table(TABLE_NAME, postgres_ddl, PRESERVE_MYSQL_CASE)
+    return create_postgresql_table_with_enums(TABLE_NAME, postgres_ddl, PRESERVE_MYSQL_CASE)
 
 def create_notificationsettingsv2_indexes(indexes):
     """Create indexes for NotificationSettingsV2 table"""

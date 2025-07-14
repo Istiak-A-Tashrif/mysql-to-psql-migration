@@ -41,7 +41,7 @@ from table_utils import (
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
 PRESERVE_MYSQL_CASE = True
-TABLE_NAME = "inventoryWirehouseProduct"
+TABLE_NAME = "inventoryWirehouseProduct"  # Note: lowercase 'i' in MySQL
 
 def get_inventorywirehouseproduct_table_info():
     """Get complete inventoryWirehouseProduct table information from MySQL including constraints"""

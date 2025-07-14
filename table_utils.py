@@ -1175,7 +1175,7 @@ def import_data_with_serial_id_setup(table_name, preserve_case=True):
     import_success = import_data_to_postgresql(table_name, True, preserve_case, include_id=False)
     
     if not import_success:
-        print(f"❌ Failed to import data for {table_name}")
+        print(f" Failed to import data for {table_name}")
         return False
     
     # Step 2: Setup auto-increment sequence based on imported data
@@ -1183,7 +1183,7 @@ def import_data_with_serial_id_setup(table_name, preserve_case=True):
     sequence_success = setup_auto_increment_sequence(table_name, preserve_case)
     
     if not sequence_success:
-        print(f"❌ Failed to setup sequence for {table_name}")
+        print(f" Failed to setup sequence for {table_name}")
         return False
     
     print(f"✅ {table_name} data import completed successfully")
@@ -1208,19 +1208,19 @@ def robust_import_with_serial_id(table_name, preserve_case=True):
     # Export data first
     export_success = robust_export_and_import_data(table_name, preserve_case, export_only=True)
     if not export_success:
-        print(f"❌ Failed to export data for {table_name}")
+        print(f" Failed to export data for {table_name}")
         return False
     
     # Import data excluding ID
     import_success = import_data_to_postgresql(table_name, True, preserve_case, include_id=False)
     if not import_success:
-        print(f"❌ Failed to import data for {table_name}")
+        print(f" Failed to import data for {table_name}")
         return False
     
     # Setup sequence
     sequence_success = setup_auto_increment_sequence(table_name, preserve_case)
     if not sequence_success:
-        print(f"❌ Failed to setup sequence for {table_name}")
+        print(f" Failed to setup sequence for {table_name}")
         return False
     
     print(f"✅ Robust import completed successfully for {table_name}")
@@ -1505,81 +1505,99 @@ def import_clientconversationtrack_from_csv(csv_file_path, preserve_case=True):
     print(f"ClientConversationTrack detected - using custom CSV parsing for newline handling")
     return import_clientconversationtrack_with_custom_parsing(csv_file_path, preserve_case)
 
-def standardize_id_column_as_serial(ddl_content, preserve_case=True):
+def standardize_id_column_as_serial(ddl, preserve_case=True):
     """
-    Standardize the ID column to be SERIAL for auto-increment functionality.
-    This ensures consistent behavior across all table migrations.
+    Standardize the ID column to use SERIAL for auto-increment functionality.
+    This ensures consistent auto-increment behavior across all tables.
     """
     import re
     
+    print("Standardized ID column to SERIAL for auto-increment")
+    
     # Pattern to match ID column definitions
+    # Look for patterns like: "id" INTEGER NOT NULL or id INT NOT NULL
     if preserve_case:
-        # Match "id" INTEGER NOT NULL or similar with quotes
-        id_pattern = r'"id"\s+\w+\s+NOT\s+NULL'
-        replacement = '"id" SERIAL NOT NULL'
+        # For case-preserved tables with quoted identifiers
+        id_patterns = [
+            (r'"id"\s+INTEGER\s+NOT\s+NULL', '"id" SERIAL PRIMARY KEY'),
+            (r'"id"\s+INT\s+NOT\s+NULL', '"id" SERIAL PRIMARY KEY'),
+            (r'"id"\s+BIGINT\s+NOT\s+NULL', '"id" BIGSERIAL PRIMARY KEY'),
+            (r'"id"\s+INTEGER', '"id" SERIAL'),
+            (r'"id"\s+INT', '"id" SERIAL'),
+            (r'"id"\s+BIGINT', '"id" BIGSERIAL'),
+        ]
     else:
-        # Match id INTEGER NOT NULL or similar without quotes
-        id_pattern = r'\bid\s+\w+\s+NOT\s+NULL'
-        replacement = 'id SERIAL NOT NULL'
+        # For lowercase tables
+        id_patterns = [
+            (r'\bid\s+INTEGER\s+NOT\s+NULL', 'id SERIAL PRIMARY KEY'),
+            (r'\bid\s+INT\s+NOT\s+NULL', 'id SERIAL PRIMARY KEY'),
+            (r'\bid\s+BIGINT\s+NOT\s+NULL', 'id BIGSERIAL PRIMARY KEY'),
+            (r'\bid\s+INTEGER', 'id SERIAL'),
+            (r'\bid\s+INT', 'id SERIAL'),
+            (r'\bid\s+BIGINT', 'id BIGSERIAL'),
+        ]
     
-    # Replace the ID column definition
-    updated_ddl = re.sub(id_pattern, replacement, ddl_content, flags=re.IGNORECASE)
+    # Apply the patterns
+    for pattern, replacement in id_patterns:
+        if re.search(pattern, ddl, re.IGNORECASE):
+            ddl = re.sub(pattern, replacement, ddl, flags=re.IGNORECASE)
+            break
     
-    # Remove any AUTO_INCREMENT keywords that might remain
-    updated_ddl = re.sub(r'\bAUTO_INCREMENT\b', '', updated_ddl, flags=re.IGNORECASE)
-    
-    print(f"Standardized ID column to SERIAL for auto-increment")
-    return updated_ddl
+    return ddl
 
 def import_depositpayment_with_null_handling(table_name, preserve_case=True):
     """
-    Special import function for DepositPayment table to handle NULL values in depositNotes column
+    Special import function for DepositPayment to handle NULL values properly.
+    DepositPayment has nullable fields that cause CSV import issues.
     """
-    print(f"Importing {table_name} data with NULL value handling...")
+    print(f"Importing {table_name} with special NULL handling...")
     
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
     
-    # Get data directly from MySQL with explicit NULL handling
-    get_data_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT paymentId, depositMethod, COALESCE(depositNotes, '') as depositNotes FROM DepositPayment;" -B --skip-column-names'''
-    result = run_command(get_data_cmd)
+    # Export data with explicit NULL handling
+    export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT paymentId, COALESCE(depositMethod, '') as depositMethod, COALESCE(depositNotes, '') as depositNotes FROM {table_name};" -B --skip-column-names'''
+    result = run_command(export_cmd)
     
     if not result or result.returncode != 0:
-        print(f"Failed to retrieve data: {result.stderr if result else 'No result'}")
+        print(f"Failed to export {table_name} data: {result.stderr if result else 'No result'}")
         return False
     
-    # Process data into proper CSV format
+    # Process the data and create clean CSV
+    import tempfile
+    import csv
+    
     lines = result.stdout.strip().split('\n')
-    csv_lines = []
+    clean_rows = []
     
     for line in lines:
         if line.strip():
             fields = line.split('\t')
-            # Ensure we have exactly 3 fields
+            # Always ensure we have exactly 3 fields
             while len(fields) < 3:
-                fields.append('')  # Add empty string for missing fields
-            
-            # Clean and quote fields as needed
-            clean_fields = []
-            for field in fields[:3]:  # Take only first 3 fields
-                if field == 'NULL' or field == '':
-                    clean_fields.append('')
-                else:
-                    # Escape quotes and wrap if needed
-                    field = field.replace('"', '""')
-                    if ',' in field or '"' in field or '\n' in field:
-                        clean_fields.append(f'"{field}"')
-                    else:
-                        clean_fields.append(field)
-            
-            csv_lines.append(','.join(clean_fields))
+                fields.append('')
+            # Take exactly 3 fields and clean them
+            clean_row = []
+            for i in range(3):
+                field = fields[i] if i < len(fields) else ''
+                clean_row.append(field.strip())
+            clean_rows.append(clean_row)
     
-    # Write CSV to temporary file
-    import tempfile
-    import os
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
-        f.write('\n'.join(csv_lines))
+    # Write to CSV file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
         temp_file = f.name
+        writer = csv.writer(f)
+        
+        for row in clean_rows:
+            # Convert empty strings to actual empty values for CSV
+            csv_row = []
+            for field in row:
+                if field == '':
+                    csv_row.append('')  # Empty string in CSV
+                else:
+                    csv_row.append(field)
+            writer.writerow(csv_row)
+    
+    print(f"Created CSV file with {len(clean_rows)} rows")
     
     try:
         # Copy to PostgreSQL container
@@ -1588,46 +1606,146 @@ def import_depositpayment_with_null_handling(table_name, preserve_case=True):
         result = run_command(copy_cmd)
         
         if not result or result.returncode != 0:
-            print(f"Failed to copy CSV to PostgreSQL container")
+            print(f"Failed to copy CSV to container: {result.stderr if result else 'No result'}")
             return False
         
-        # Import using COPY command
-        copy_sql = f'COPY {pg_table_name} ("paymentId", "depositMethod", "depositNotes") FROM \'/tmp/{import_file_name}\' WITH (FORMAT csv, DELIMITER \',\', QUOTE \'"\', NULL \'\');'
+        # Import using COPY command with proper NULL handling
+        if preserve_case:
+            copy_sql = f'''COPY {pg_table_name} ("paymentId", "depositMethod", "depositNotes") FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
+        else:
+            copy_sql = f'''COPY {pg_table_name} (paymentId, depositMethod, depositNotes) FROM '/tmp/{import_file_name}' WITH (FORMAT csv, DELIMITER ',', QUOTE '"', NULL '');'''
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as f:
-            f.write(copy_sql)
-            copy_sql_file = f.name
+        # Execute the import
+        success, result = execute_postgresql_sql(copy_sql, f"{table_name} data import")
         
-        try:
-            # Copy SQL file and execute
-            copy_sql_cmd = f'docker cp "{copy_sql_file}" postgres_target:/tmp/import_data.sql'
-            result = run_command(copy_sql_cmd)
+        if success and result and "COPY" in result.stdout:
+            imported_count = result.stdout.split("COPY")[1].strip().split()[0]
+            print(f"Successfully imported {imported_count} records to {table_name}")
+            return True
+        else:
+            print(f"Failed to import {table_name} data")
+            if result:
+                print(f"Error: {result.stderr}")
+            return False
             
-            if result and result.returncode == 0:
-                import_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_data.sql'
-                result = run_command(import_cmd)
-                
-                if result and result.returncode == 0:
-                    print(f"Successfully imported {table_name} data with NULL handling")
-                    return True
-                else:
-                    print(f"Failed to import data: {result.stderr if result else 'No result'}")
-                    return False
-            else:
-                print(f"Failed to copy SQL file")
-                return False
-        finally:
-            # Clean up SQL file
-            try:
-                if os.path.exists(copy_sql_file):
-                    os.unlink(copy_sql_file)
-            except:
-                pass
     finally:
-        # Clean up CSV file
+        # Clean up temporary file
         try:
+            import os
             os.unlink(temp_file)
         except:
             pass
+
+def extract_enum_definitions(ddl_text):
+    """Extract all ENUM definitions from DDL text and return enum type definitions"""
+    enum_types = {}
+    enum_pattern = r"enum\s*\(\s*([^)]+)\s*\)"
     
-    return False
+    matches = re.finditer(enum_pattern, ddl_text, re.IGNORECASE)
+    enum_counter = 1
+    
+    for match in matches:
+        enum_values = match.group(1)
+        # Clean up the values - remove quotes and split by comma
+        values = [v.strip().strip("'\"") for v in enum_values.split(',')]
+        
+        # Create a unique enum type name based on values
+        enum_name = f"enum_type_{enum_counter}"
+        enum_counter += 1
+        
+        # Try to create a more descriptive name based on values
+        if len(values) <= 3:
+            enum_name = "_".join(values).lower().replace(' ', '_')[:50] + "_enum"
+        
+        enum_types[match.group(0)] = {
+            'type_name': enum_name,
+            'values': values
+        }
+    
+    return enum_types
+
+def create_postgresql_enums(enum_types):
+    """Create PostgreSQL ENUM types"""
+    enum_ddl = ""
+    for enum_def in enum_types.values():
+        type_name = enum_def['type_name']
+        values = enum_def['values']
+        
+        # Create DROP TYPE IF EXISTS and CREATE TYPE statements
+        enum_ddl += f"DROP TYPE IF EXISTS {type_name} CASCADE;\n"
+        values_str = "', '".join(values)
+        enum_ddl += f"CREATE TYPE {type_name} AS ENUM ('{values_str}');\n\n"
+    
+    return enum_ddl
+
+def convert_enums_in_ddl(ddl_text):
+    """Convert MySQL ENUMs to PostgreSQL user-defined types in DDL"""
+    # Extract enum definitions
+    enum_types = extract_enum_definitions(ddl_text)
+    
+    if not enum_types:
+        return ddl_text, ""
+    
+    # Generate PostgreSQL enum type definitions
+    enum_ddl = create_postgresql_enums(enum_types)
+    
+    # Replace enum(...) with the type name in the DDL
+    converted_ddl = ddl_text
+    for original_enum, enum_def in enum_types.items():
+        type_name = enum_def['type_name']
+        converted_ddl = converted_ddl.replace(original_enum, type_name)
+    
+    return converted_ddl, enum_ddl
+
+def execute_enum_creation(enum_ddl):
+    """Execute ENUM type creation in PostgreSQL"""
+    if not enum_ddl:
+        return True
+        
+    print("Creating PostgreSQL ENUM types...")
+    
+    # Write enum DDL to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+        f.write(enum_ddl)
+        temp_file = f.name
+    
+    try:
+        # Copy the SQL file to the container and execute it
+        copy_cmd = f'docker cp {temp_file} postgres_target:/tmp/create_enums.sql'
+        result = run_command(copy_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to copy ENUM SQL file: {result.stderr if result else 'No result'}")
+            return False
+        
+        # Execute the SQL file
+        exec_cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_enums.sql'
+        result = run_command(exec_cmd)
+        
+        if not result or result.returncode != 0:
+            print(f"Failed to create ENUM types: {result.stderr if result else 'No result'}")
+            print(f"ENUM DDL that failed:")
+            print(enum_ddl)
+            return False
+        
+        print("PostgreSQL ENUM types created successfully")
+        return True
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
+
+def create_postgresql_table_with_enums(table_name, postgres_ddl, preserve_case=True):
+    """Create PostgreSQL table with ENUM type support"""
+    # First, extract and create any ENUM types
+    converted_ddl, enum_ddl = convert_enums_in_ddl(postgres_ddl)
+    
+    # Create ENUM types first if any exist
+    if enum_ddl:
+        if not execute_enum_creation(enum_ddl):
+            print(f"Failed to create ENUM types for {table_name}")
+            return False
+    
+    # Now create the table with converted DDL
+    return create_postgresql_table(table_name, converted_ddl, preserve_case)
