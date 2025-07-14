@@ -9,9 +9,10 @@ This script migrates the InventoryProduct table from MySQL to PostgreSQL.
 import argparse
 from table_utils import (
     create_postgresql_table,
-    robust_import_with_serial_id,
+    robust_export_and_import_data,
     validate_migration_success,
-    execute_postgresql_sql
+    execute_postgresql_sql,
+    setup_auto_increment_sequence
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -73,8 +74,12 @@ def phase1_create_table_and_data():
         return False
     
     # Import data using robust method
-    if not robust_import_with_serial_id(TABLE_NAME, PRESERVE_MYSQL_CASE):
+    if not robust_export_and_import_data(TABLE_NAME, PRESERVE_MYSQL_CASE, include_id=True):
         return False
+    
+    # Setup auto-increment sequence
+    if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
+        print(f"Warning: Could not setup auto-increment sequence for {TABLE_NAME}")
     
     return True
 

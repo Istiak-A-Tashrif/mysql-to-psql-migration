@@ -2421,8 +2421,8 @@ def fix_mailgunemail_with_direct_sql(preserve_case=True):
             created_at = created_at if created_at and created_at != 'NULL' else '2025-01-01 00:00:00.000'
             message_id = message_id.replace("'", "''") if message_id and message_id != 'NULL' else ''
             
-            # Create INSERT statement
-            insert_stmt = f"""INSERT INTO {pg_table_name} ("subject", "TEXT", "emailBy", "companyId", "clientId", "createdAt", "messageId") VALUES ('{subject}', '{text}', '{email_by}', {company_id}, {client_id}, '{created_at}', '{message_id}');"""
+            # Create INSERT statement with original ID
+            insert_stmt = f"""INSERT INTO {pg_table_name} ("id", "subject", "TEXT", "emailBy", "companyId", "clientId", "createdAt", "messageId") VALUES ({id_val}, '{subject}', '{text}', '{email_by}', {company_id}, {client_id}, '{created_at}', '{message_id}');"""
             
             valid_inserts.append(insert_stmt)
             

@@ -32,13 +32,10 @@ from table_utils import (
     run_command,
     create_postgresql_table,
     export_and_clean_mysql_data,
-    import_data_to_postgresql,
+    robust_export_and_import_data,
     add_primary_key_constraint,
     setup_auto_increment_sequence,
-    execute_postgresql_sql,
-    import_data_with_serial_id_setup,
-    robust_export_and_import_data,
-    import_depositpayment_with_null_handling
+    execute_postgresql_sql
 )
 
 # Configuration: Set to True to preserve MySQL naming convention in PostgreSQL
@@ -371,8 +368,8 @@ def main():
         if not create_depositpayment_table(mysql_ddl):
             success = False
         else:
-            # Use special NULL handling for DepositPayment
-            if import_depositpayment_with_null_handling(TABLE_NAME, PRESERVE_MYSQL_CASE):
+            # Import data preserving original IDs
+            if robust_export_and_import_data(TABLE_NAME, PRESERVE_MYSQL_CASE, include_id=True):
                 add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
                 setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
                 print(f" Phase 1 complete for {TABLE_NAME}")

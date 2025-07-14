@@ -343,11 +343,8 @@ def create_lead_foreign_keys(foreign_keys):
 def import_lead_data_with_constraint_handling():
     """Import Lead data with special handling for constraint issues"""
     print(f" Importing {TABLE_NAME} data...")
-    # Export robust CSV only
-    robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True, export_only=True)
-    # Now use the dedicated cleaner/importer
-    import_result = import_data_to_postgresql(TABLE_NAME, PRESERVE_MYSQL_CASE)
-    if not import_result:
+    # Use robust export and import preserving IDs
+    if not robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True):
         print("❌ Data import failed")
         return False
     print(f"✅ {TABLE_NAME} data import completed successfully")

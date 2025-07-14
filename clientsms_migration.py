@@ -503,6 +503,17 @@ def phase1_create_table_and_data():
                 print(f" Import command stdout: {result.stdout}")
             return False
         print(f" Successfully imported ClientSMS data")
+        
+        # Setup auto-increment sequence
+        print(f" Setting up auto-increment sequence for {TABLE_NAME}...")
+        if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
+            print(f" Warning: Could not setup auto-increment sequence for {TABLE_NAME}")
+        
+        # Add PRIMARY KEY constraint
+        print(f" Adding PRIMARY KEY constraint to {TABLE_NAME}...")
+        if not add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE):
+            print(f" Warning: Could not add PRIMARY KEY constraint to {TABLE_NAME}")
+        
         return True
         
     finally:

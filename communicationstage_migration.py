@@ -13,7 +13,7 @@ from table_utils import (
     verify_table_structure,
     run_command,
     create_postgresql_table,
-    import_data_with_serial_id_setup,
+    robust_export_and_import_data,
     add_primary_key_constraint,
     setup_auto_increment_sequence
 )
@@ -48,8 +48,8 @@ def phase1_create_table_and_data():
     if not create_communicationstage_table():
         return False
     
-    # Import data
-    if not import_data_with_serial_id_setup(TABLE_NAME, PRESERVE_MYSQL_CASE):
+    # Import data preserving original IDs
+    if not robust_export_and_import_data(TABLE_NAME, PRESERVE_MYSQL_CASE, include_id=True):
         return False
     
     # Add PRIMARY KEY constraint
