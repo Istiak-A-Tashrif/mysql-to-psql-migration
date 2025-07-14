@@ -43,14 +43,14 @@ TABLE_NAME = "User"
 
 def get_user_table_info():
     """Get complete User table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get User table structure: {result.stderr if result else 'No result'}")
+        print(f" Failed to get User table structure: {result.stderr if result else 'No result'}")
         return None, None, None
 
     
@@ -64,14 +64,14 @@ def get_user_table_info():
                 break
     
     if not create_statement:
-        print("❌ Could not find CREATE TABLE statement for User")
+        print(" Could not find CREATE TABLE statement for User")
         return None, None, None
     
     # Extract different components
     indexes = extract_user_indexes_from_ddl(create_statement)
     foreign_keys = extract_user_foreign_keys_from_ddl(create_statement)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for User table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for User table")
     return create_statement, indexes, foreign_keys
 
 def extract_user_indexes_from_ddl(ddl):
@@ -161,7 +161,7 @@ def create_user_enum_types():
         copy_cmd = f'docker cp "{sql_file}" postgres_target:/tmp/'
         copy_result = run_command(copy_cmd)
         if not copy_result or "Error" in str(copy_result):
-            print(f"❌ Failed to copy {sql_file} to container")
+            print(f" Failed to copy {sql_file} to container")
             continue
             
         result = run_command(cmd)
@@ -173,13 +173,13 @@ def create_user_enum_types():
             pass
             
         if result and ("CREATE TYPE" in str(result) or "already exists" in str(result)):
-            print(f"✅ ENUM type {enum_name} created successfully")
+            print(f" ENUM type {enum_name} created successfully")
         else:
-            print(f"❌ Failed to create ENUM type {enum_name}: {result}")
+            print(f" Failed to create ENUM type {enum_name}: {result}")
 
 def convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert User table MySQL DDL to PostgreSQL DDL with User-specific optimizations and ENUM handling"""
-    print(f"🔄 Converting User table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting User table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -273,10 +273,10 @@ def convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, p
 def create_user_indexes(indexes):
     """Create indexes for User table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     created_indexes = set()  # Track created index names to avoid duplicates
@@ -286,7 +286,7 @@ def create_user_indexes(indexes):
         
         # Skip duplicates (can happen with UNIQUE variants)
         if index_name in created_indexes:
-            print(f"⚠️ Skipping duplicate index: {index_name}")
+            print(f" Skipping duplicate index: {index_name}")
             continue
             
         created_indexes.add(index_name)
@@ -298,7 +298,7 @@ def create_user_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f"🔧 Creating User index: {index_name}")
+        print(f" Creating User index: {index_name}")
         
         # Write to file and execute
         sql_file = f"create_user_index_{index_name}.sql"
@@ -320,9 +320,9 @@ def create_user_indexes(indexes):
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created User index: {index_name}")
+            print(f" Created User index: {index_name}")
         else:
-            print(f"❌ Failed to create User index: {index_name}")
+            print(f" Failed to create User index: {index_name}")
             if result:
                 print(f"   Error: {result.stderr}")
                 print(f"   SQL: {create_index_sql}")
@@ -348,10 +348,10 @@ def check_user_referenced_table_exists(ref_table):
 def create_user_foreign_keys(foreign_keys):
     """Create foreign keys for User table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created = 0
     skipped = 0
@@ -361,7 +361,7 @@ def create_user_foreign_keys(foreign_keys):
         
         # Check if referenced table exists
         if not check_user_referenced_table_exists(ref_table):
-            print(f"⚠️ Skipping User FK {fk['name']}: Referenced table '{ref_table}' does not exist")
+            print(f" Skipping User FK {fk['name']}: Referenced table '{ref_table}' does not exist")
             skipped += 1
             continue
         
@@ -393,7 +393,7 @@ REFERENCES {ref_table_name} ({ref_cols})
 ON DELETE {on_delete}
 ON UPDATE {on_update};
 """
-        print(f"🔧 Creating User FK: {constraint_name} -> {ref_table}")
+        print(f" Creating User FK: {constraint_name} -> {ref_table}")
         
         # Write to file and execute
         sql_file = f"create_user_fk_{constraint_name}.sql"
@@ -415,17 +415,17 @@ ON UPDATE {on_update};
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created User FK: {constraint_name}")
+            print(f" Created User FK: {constraint_name}")
             created += 1
         else:
-            print(f"❌ Failed to create User FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
+            print(f" Failed to create User FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
     
-    print(f"🎯 User Foreign Keys: {created} created, {skipped} skipped")
+    print(f" User Foreign Keys: {created} created, {skipped} skipped")
     return True
 
 def migrate_user_phase1():
     """Phase 1: Create User table and import data"""
-    print(f"🚀 Phase 1: Creating User table and importing data")
+    print(f" Phase 1: Creating User table and importing data")
     
     # Step 1: Create ENUM types first
     create_user_enum_types()
@@ -436,7 +436,7 @@ def migrate_user_phase1():
     
     postgres_ddl = convert_user_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -456,14 +456,14 @@ def migrate_user_phase1():
     
     # Setup auto-increment sequence for preserved IDs
     if not setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
-        print("⚠️ Warning: Could not setup auto-increment sequence")
+        print(" Warning: Could not setup auto-increment sequence")
 
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def migrate_user_phase2():
     """Phase 2: Create indexes"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_user_table_info()
     if not mysql_ddl:
@@ -473,7 +473,7 @@ def migrate_user_phase2():
 
 def migrate_user_phase3():
     """Phase 3: Create foreign keys"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_user_table_info()
     if not mysql_ddl:
@@ -483,7 +483,7 @@ def migrate_user_phase3():
 
 def verify_user_migration():
     """Verify User table structure matches between MySQL and PostgreSQL"""
-    print(f"🔍 Verifying table structure for {TABLE_NAME}")
+    print(f" Verifying table structure for {TABLE_NAME}")
     return verify_table_structure(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
 
 def main():
@@ -511,9 +511,9 @@ def main():
         return
     
     if success:
-        print("🎉 Operation completed successfully!")
+        print(" Operation completed successfully!")
     else:
-        print("❌ Operation failed!")
+        print(" Operation failed!")
         exit(1)
 
 if __name__ == "__main__":

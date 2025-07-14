@@ -45,14 +45,14 @@ TABLE_NAME = "Coupon"
 
 def get_coupon_table_info():
     """Get complete Coupon table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     
     # Extract DDL
@@ -71,7 +71,7 @@ def get_coupon_table_info():
                 break
     
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -82,7 +82,7 @@ def get_coupon_table_info():
     indexes = extract_coupon_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_coupon_foreign_keys_from_ddl(mysql_ddl)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_coupon_indexes_from_ddl(ddl):
@@ -139,7 +139,7 @@ def extract_coupon_foreign_keys_from_ddl(ddl):
 
 def convert_coupon_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert Coupon table MySQL DDL to PostgreSQL DDL with Coupon-specific optimizations"""
-    print(f"🔄 Converting Coupon table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting Coupon table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -147,7 +147,7 @@ def convert_coupon_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False,
     # Extract just the column definitions part
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     
     columns_part = create_match.group(1)
@@ -197,13 +197,13 @@ def process_coupon_column_definition(line, preserve_case):
         # For Coupon enums, create proper PostgreSQL enums
         if 'discountType' in line:
             line = re.sub(enum_pattern, 'discounttype_enum', line, flags=re.IGNORECASE)
-            print(f"🔧 Converted discountType ENUM to discounttype_enum for Coupon")
+            print(f" Converted discountType ENUM to discounttype_enum for Coupon")
         elif 'status' in line:
             line = re.sub(enum_pattern, 'status_enum', line, flags=re.IGNORECASE)
-            print(f"🔧 Converted status ENUM to status_enum for Coupon")
+            print(f" Converted status ENUM to status_enum for Coupon")
         else:
             line = re.sub(enum_pattern, 'VARCHAR(100)', line, flags=re.IGNORECASE)
-            print(f"🔧 Converted ENUM to VARCHAR for Coupon")
+            print(f" Converted ENUM to VARCHAR for Coupon")
     
     # MySQL to PostgreSQL type conversions for Coupon
     conversions = [
@@ -260,10 +260,10 @@ def process_coupon_column_definition(line, preserve_case):
 
 def create_coupon_table(mysql_ddl):
     """Create Coupon table in PostgreSQL"""
-    print(f"📋 Generating PostgreSQL DDL for {TABLE_NAME}...")
+    print(f" Generating PostgreSQL DDL for {TABLE_NAME}...")
     
     # Create the enum types for Coupon
-    print("🔧 Creating enum types...")
+    print(" Creating enum types...")
     enum_sql = '''
     DO $$ BEGIN
         CREATE TYPE discounttype_enum AS ENUM ('Percentage', 'Fixed');
@@ -288,16 +288,16 @@ def create_coupon_table(mysql_ddl):
         enum_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_coupon_enums.sql'
         result = run_command(enum_cmd)
         if result and result.returncode == 0:
-            print("✅ Created enum types")
+            print(" Created enum types")
         else:
-            print(f"⚠️ Enum creation warning: {result.stderr if result else 'No result'}")
+            print(f" Enum creation warning: {result.stderr if result else 'No result'}")
     
     # Convert MySQL DDL to PostgreSQL DDL
     postgres_ddl = convert_coupon_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     if not postgres_ddl:
         return False
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -307,10 +307,10 @@ def create_coupon_table(mysql_ddl):
 def create_coupon_indexes(indexes):
     """Create indexes for Coupon table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     for index in indexes:
@@ -330,14 +330,14 @@ def create_coupon_indexes(indexes):
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     
     return success
@@ -345,10 +345,10 @@ def create_coupon_indexes(indexes):
 def create_coupon_foreign_keys(foreign_keys):
     """Create foreign keys for Coupon table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created_count = 0
     skipped_count = 0
@@ -373,17 +373,17 @@ def create_coupon_foreign_keys(foreign_keys):
         # Create the foreign key constraint
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         
         if success and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
     
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f" {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def import_coupon_data_custom():
@@ -395,13 +395,13 @@ def import_coupon_data_custom():
     result = run_command(drop_cmd)
     
     # Export using basic tab-separated format
-    print("🔄 Exporting Coupon data with proper escaping...")
+    print(" Exporting Coupon data with proper escaping...")
     
     export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT id, name, code, type, startDate, endDate, discount, discountType, status, redemptions, company_id, created_at, updated_at FROM Coupon" -B --skip-column-names'''
     result = run_command(export_cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to export Coupon data: {result.stderr if result else 'No result'}")
+        print(f" Failed to export Coupon data: {result.stderr if result else 'No result'}")
         return False
     
     # Process the tab-separated data and convert to proper CSV
@@ -433,13 +433,13 @@ def import_coupon_data_custom():
                     current_row = []
             else:
                 # Too many fields - this shouldn't happen
-                print(f"⚠️ Skipping malformed row with {len(fields)} fields")
+                print(f" Skipping malformed row with {len(fields)} fields")
         
         # Handle any remaining fields
         if current_row and len(current_row) == field_count:
             csv_lines.append(process_csv_row(current_row))
         
-        print(f"📊 Processed {len(csv_lines)} rows from export")
+        print(f" Processed {len(csv_lines)} rows from export")
         
         # Write processed CSV
         with open('Coupon_processed.csv', 'w', encoding='utf-8') as f:
@@ -450,7 +450,7 @@ def import_coupon_data_custom():
         result = run_command(copy_cmd)
         
         if not result or result.returncode != 0:
-            print(f"❌ Failed to copy processed CSV: {result.stderr if result else 'No result'}")
+            print(f" Failed to copy processed CSV: {result.stderr if result else 'No result'}")
             return False
         
         # Import using COPY command
@@ -464,7 +464,7 @@ def import_coupon_data_custom():
         result = run_command(copy_sql_cmd)
         
         if not result or result.returncode != 0:
-            print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+            print(f" Failed to copy SQL file: {result.stderr if result else 'No result'}")
             return False
         
         # Execute the import
@@ -472,12 +472,12 @@ def import_coupon_data_custom():
         result = run_command(import_cmd)
         
         if not result or result.returncode != 0:
-            print(f"❌ Failed to import Coupon data: {result.stderr if result else 'No result'}")
+            print(f" Failed to import Coupon data: {result.stderr if result else 'No result'}")
             if result:
-                print(f"🔍 Import command stdout: {result.stdout}")
+                print(f" Import command stdout: {result.stdout}")
             return False
         
-        print(f"✅ Successfully imported Coupon data")
+        print(f" Successfully imported Coupon data")
         return True
         
     finally:
@@ -509,7 +509,7 @@ def process_csv_row(fields):
 
 def phase1_create_table_and_data():
     """Phase 1: Create Coupon table and import data"""
-    print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+    print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
     
     # Get table info from MySQL
     mysql_ddl, indexes, foreign_keys = get_coupon_table_info()
@@ -532,12 +532,12 @@ def phase1_create_table_and_data():
     if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
         return False
     
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def phase2_create_indexes():
     """Phase 2: Create indexes for Coupon table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     # Get indexes from MySQL
     mysql_ddl, indexes, foreign_keys = get_coupon_table_info()
@@ -548,7 +548,7 @@ def phase2_create_indexes():
 
 def phase3_create_foreign_keys():
     """Phase 3: Create foreign keys for Coupon table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     # Get foreign keys from MySQL
     mysql_ddl, indexes, foreign_keys = get_coupon_table_info()
@@ -576,9 +576,9 @@ def main():
                   phase2_create_indexes() and 
                   phase3_create_foreign_keys())
         if success:
-            print("🎉 Operation completed successfully!")
+            print(" Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print(" Operation failed!")
             exit(1)
         return
     

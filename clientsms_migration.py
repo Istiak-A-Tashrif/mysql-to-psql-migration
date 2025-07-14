@@ -46,14 +46,14 @@ TABLE_NAME = "ClientSMS"
 
 def get_clientsms_table_info():
     """Get complete ClientSMS table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     
     # Extract DDL
@@ -72,7 +72,7 @@ def get_clientsms_table_info():
                 break
     
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -83,7 +83,7 @@ def get_clientsms_table_info():
     indexes = extract_clientsms_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_clientsms_foreign_keys_from_ddl(mysql_ddl)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_clientsms_indexes_from_ddl(ddl):
@@ -140,7 +140,7 @@ def extract_clientsms_foreign_keys_from_ddl(ddl):
 
 def convert_clientsms_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert ClientSMS table MySQL DDL to PostgreSQL DDL with ClientSMS-specific optimizations"""
-    print(f"🔄 Converting ClientSMS table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting ClientSMS table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -148,7 +148,7 @@ def convert_clientsms_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=Fal
     # Extract just the column definitions part
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     
     columns_part = create_match.group(1)
@@ -192,13 +192,13 @@ def process_clientsms_column_definition(line, preserve_case):
     
     # Handle reserved word 'from' by using proper quoting
     if '"from"' in line:
-        print(f"🔧 Handling reserved word 'from' in column definition")
+        print(f" Handling reserved word 'from' in column definition")
     
     # ClientSMS-specific fix: Make message nullable
     if '"message"' in line:
         # Remove NOT NULL if present
         line = line.replace('NOT NULL', '')
-        print(f"🔧 Allowing message column to be NULL (nullable field)")
+        print(f" Allowing message column to be NULL (nullable field)")
     
     # Handle ENUM types - convert to PostgreSQL ENUM or VARCHAR
     enum_pattern = r'enum\(([^)]+)\)'
@@ -208,10 +208,10 @@ def process_clientsms_column_definition(line, preserve_case):
         # For ClientSMS sentBy enum, create a proper PostgreSQL enum
         if 'sentBy' in line:
             line = re.sub(enum_pattern, 'sentby_enum', line, flags=re.IGNORECASE)
-            print(f"🔧 Converted sentBy ENUM to sentby_enum for ClientSMS")
+            print(f" Converted sentBy ENUM to sentby_enum for ClientSMS")
         else:
             line = re.sub(enum_pattern, 'VARCHAR(100)', line, flags=re.IGNORECASE)
-            print(f"🔧 Converted ENUM to VARCHAR for ClientSMS")
+            print(f" Converted ENUM to VARCHAR for ClientSMS")
     
     # MySQL to PostgreSQL type conversions for ClientSMS
     conversions = [
@@ -268,10 +268,10 @@ def process_clientsms_column_definition(line, preserve_case):
 
 def create_clientsms_table(mysql_ddl):
     """Create ClientSMS table in PostgreSQL"""
-    print(f"📋 Generating PostgreSQL DDL for {TABLE_NAME}...")
+    print(f" Generating PostgreSQL DDL for {TABLE_NAME}...")
     
     # Create the enum type for sentBy
-    print("🔧 Creating sentBy enum type...")
+    print(" Creating sentBy enum type...")
     enum_sql = '''
     DO $$ BEGIN
         CREATE TYPE sentby_enum AS ENUM ('Client', 'Company');
@@ -290,16 +290,16 @@ def create_clientsms_table(mysql_ddl):
         enum_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/create_enum.sql'
         result = run_command(enum_cmd)
         if result and result.returncode == 0:
-            print("✅ Created sentBy enum type")
+            print(" Created sentBy enum type")
         else:
-            print(f"⚠️ Enum creation warning: {result.stderr if result else 'No result'}")
+            print(f" Enum creation warning: {result.stderr if result else 'No result'}")
     
     # Convert MySQL DDL to PostgreSQL DDL
     postgres_ddl = convert_clientsms_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     if not postgres_ddl:
         return False
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -309,10 +309,10 @@ def create_clientsms_table(mysql_ddl):
 def create_clientsms_indexes(indexes):
     """Create indexes for ClientSMS table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     for index in indexes:
@@ -332,14 +332,14 @@ def create_clientsms_indexes(indexes):
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     
     return success
@@ -347,10 +347,10 @@ def create_clientsms_indexes(indexes):
 def create_clientsms_foreign_keys(foreign_keys):
     """Create foreign keys for ClientSMS table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created_count = 0
     skipped_count = 0
@@ -375,22 +375,22 @@ def create_clientsms_foreign_keys(foreign_keys):
         # Create the foreign key constraint
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         
         if success and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
     
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f" {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def phase1_create_table_and_data():
     """Phase 1: Create ClientSMS table and import data"""
-    print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+    print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
     
     # Get table info from MySQL
     mysql_ddl, indexes, foreign_keys = get_clientsms_table_info()
@@ -402,14 +402,14 @@ def phase1_create_table_and_data():
         return False
     
     # Use a different approach - export with proper escaping
-    print("🔄 Exporting ClientSMS data with proper escaping...")
+    print(" Exporting ClientSMS data with proper escaping...")
     
     # Export using basic tab-separated format
     export_cmd = f'''docker exec mysql_source mysql -u mysql -pmysql source_db -e "SELECT id, message, `from`, `to`, sentBy, is_read, user_id, company_id, client_id, created_at, updated_at FROM ClientSMS" -B --skip-column-names'''
     result = run_command(export_cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to export ClientSMS data: {result.stderr if result else 'No result'}")
+        print(f" Failed to export ClientSMS data: {result.stderr if result else 'No result'}")
         return False
     
     # Process the tab-separated data and convert to proper CSV
@@ -441,13 +441,13 @@ def phase1_create_table_and_data():
                     current_row = []
             else:
                 # Too many fields - this shouldn't happen
-                print(f"⚠️ Skipping malformed row with {len(fields)} fields")
+                print(f" Skipping malformed row with {len(fields)} fields")
         
         # Handle any remaining fields
         if current_row and len(current_row) == field_count:
             csv_lines.append(process_csv_row(current_row))
         
-        print(f"📊 Processed {len(csv_lines)} rows from export")
+        print(f" Processed {len(csv_lines)} rows from export")
         
         # Write processed CSV
         with open('ClientSMS_processed.csv', 'w', encoding='utf-8') as f:
@@ -476,7 +476,7 @@ def phase1_create_table_and_data():
         copy_cmd = 'docker cp ClientSMS_processed.csv postgres_target:/tmp/ClientSMS_import.csv'
         result = run_command(copy_cmd)
         if not result or result.returncode != 0:
-            print(f"❌ Failed to copy processed CSV: {result.stderr if result else 'No result'}")
+            print(f" Failed to copy processed CSV: {result.stderr if result else 'No result'}")
             return False
 
         # Import using COPY command
@@ -487,7 +487,7 @@ def phase1_create_table_and_data():
         copy_sql_cmd = 'docker cp import_clientsms.sql postgres_target:/tmp/import_clientsms.sql'
         result = run_command(copy_sql_cmd)
         if not result or result.returncode != 0:
-            print(f"❌ Failed to copy SQL file: {result.stderr if result else 'No result'}")
+            print(f" Failed to copy SQL file: {result.stderr if result else 'No result'}")
             return False
         # Execute the import
         import_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/import_clientsms.sql'
@@ -498,11 +498,11 @@ def phase1_create_table_and_data():
             print("STDERR:\n", result.stderr)
         print("--- End of COPY output ---\n")
         if not result or result.returncode != 0:
-            print(f"❌ Failed to import ClientSMS data: {result.stderr if result else 'No result'}")
+            print(f" Failed to import ClientSMS data: {result.stderr if result else 'No result'}")
             if result:
-                print(f"🔍 Import command stdout: {result.stdout}")
+                print(f" Import command stdout: {result.stdout}")
             return False
-        print(f"✅ Successfully imported ClientSMS data")
+        print(f" Successfully imported ClientSMS data")
         return True
         
     finally:
@@ -518,7 +518,7 @@ def phase1_create_table_and_data():
 
 def phase2_create_indexes():
     """Phase 2: Create indexes for ClientSMS table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     # Get indexes from MySQL
     mysql_ddl, indexes, foreign_keys = get_clientsms_table_info()
@@ -529,7 +529,7 @@ def phase2_create_indexes():
 
 def phase3_create_foreign_keys():
     """Phase 3: Create foreign keys for ClientSMS table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     # Get foreign keys from MySQL
     mysql_ddl, indexes, foreign_keys = get_clientsms_table_info()
@@ -572,9 +572,9 @@ def main():
                   phase2_create_indexes() and 
                   phase3_create_foreign_keys())
         if success:
-            print("🎉 Operation completed successfully!")
+            print(" Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print(" Operation failed!")
             exit(1)
         return
     

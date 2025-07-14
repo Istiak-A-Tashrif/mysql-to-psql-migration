@@ -42,25 +42,25 @@ TABLE_NAME = "Source"
 
 def get_source_table_info():
     """Get complete Source table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get Source table structure: {result.stderr if result else 'No result'}")
+        print(f" Failed to get Source table structure: {result.stderr if result else 'No result'}")
         return None, [], []
     
     mysql_ddl = result.stdout
     
     # Extract indexes
     indexes = extract_source_indexes_from_ddl(mysql_ddl)
-    print(f"✅ Found {len(indexes)} indexes for Source table")
+    print(f" Found {len(indexes)} indexes for Source table")
     
     # Extract foreign keys
     foreign_keys = extract_source_foreign_keys_from_ddl(mysql_ddl)
-    print(f"✅ Found {len(foreign_keys)} foreign keys for Source table")
+    print(f" Found {len(foreign_keys)} foreign keys for Source table")
     
     return mysql_ddl, indexes, foreign_keys
 
@@ -118,7 +118,7 @@ def extract_source_foreign_keys_from_ddl(ddl):
 
 def convert_source_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert Source table MySQL DDL to PostgreSQL DDL with Source-specific optimizations"""
-    print(f"🔄 Converting Source table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting Source table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -195,10 +195,10 @@ def convert_source_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False,
 def create_source_indexes(indexes):
     """Create indexes for Source table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     created_indexes = set()  # Track created index names to avoid duplicates
@@ -208,7 +208,7 @@ def create_source_indexes(indexes):
         
         # Skip duplicates (can happen with UNIQUE variants)
         if index_name in created_indexes:
-            print(f"⚠️ Skipping duplicate index: {index_name}")
+            print(f" Skipping duplicate index: {index_name}")
             continue
             
         created_indexes.add(index_name)
@@ -220,7 +220,7 @@ def create_source_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f"🔧 Creating Source index: {index_name}")
+        print(f" Creating Source index: {index_name}")
         
         # Write to file and execute
         sql_file = f"create_source_index_{index_name}.sql"
@@ -242,9 +242,9 @@ def create_source_indexes(indexes):
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created Source index: {index_name}")
+            print(f" Created Source index: {index_name}")
         else:
-            print(f"❌ Failed to create Source index: {index_name}")
+            print(f" Failed to create Source index: {index_name}")
             if result:
                 print(f"   Error: {result.stderr}")
                 print(f"   SQL: {create_index_sql}")
@@ -270,10 +270,10 @@ def check_source_referenced_table_exists(ref_table):
 def create_source_foreign_keys(foreign_keys):
     """Create foreign keys for Source table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created = 0
     skipped = 0
@@ -283,7 +283,7 @@ def create_source_foreign_keys(foreign_keys):
         
         # Check if referenced table exists
         if not check_source_referenced_table_exists(ref_table):
-            print(f"⚠️ Skipping Source FK {fk['name']}: Referenced table '{ref_table}' does not exist")
+            print(f" Skipping Source FK {fk['name']}: Referenced table '{ref_table}' does not exist")
             skipped += 1
             continue
         
@@ -315,7 +315,7 @@ REFERENCES {ref_table_name} ({ref_cols})
 ON DELETE {on_delete}
 ON UPDATE {on_update};
 """
-        print(f"🔧 Creating Source FK: {constraint_name} -> {ref_table}")
+        print(f" Creating Source FK: {constraint_name} -> {ref_table}")
         
         # Write to file and execute
         sql_file = f"create_source_fk_{constraint_name}.sql"
@@ -337,17 +337,17 @@ ON UPDATE {on_update};
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created Source FK: {constraint_name}")
+            print(f" Created Source FK: {constraint_name}")
             created += 1
         else:
-            print(f"❌ Failed to create Source FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
+            print(f" Failed to create Source FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
     
-    print(f"🎯 Source Foreign Keys: {created} created, {skipped} skipped")
+    print(f" Source Foreign Keys: {created} created, {skipped} skipped")
     return True
 
 def migrate_source_phase1():
     """Phase 1: Create Source table and import data"""
-    print(f"🚀 Phase 1: Creating Source table and importing data")
+    print(f" Phase 1: Creating Source table and importing data")
     
     mysql_ddl, indexes, foreign_keys = get_source_table_info()
     if not mysql_ddl:
@@ -355,7 +355,7 @@ def migrate_source_phase1():
     
     postgres_ddl = convert_source_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -375,14 +375,14 @@ def migrate_source_phase1():
     
     # Setup auto-increment sequence for preserved IDs
     if not setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
-        print("⚠️ Warning: Could not setup auto-increment sequence")
+        print(" Warning: Could not setup auto-increment sequence")
 
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def migrate_source_phase2():
     """Phase 2: Create indexes for Source table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_source_table_info()
     if not mysql_ddl:
@@ -392,7 +392,7 @@ def migrate_source_phase2():
 
 def migrate_source_phase3():
     """Phase 3: Create foreign keys for Source table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_source_table_info()
     if not mysql_ddl:
@@ -402,26 +402,26 @@ def migrate_source_phase3():
 
 def migrate_source_full():
     """Full migration: All phases in sequence"""
-    print(f"🚀 Full Source migration: Running all phases")
+    print(f" Full Source migration: Running all phases")
     
     if not migrate_source_phase1():
-        print(f"❌ Phase 1 failed for {TABLE_NAME}")
+        print(f" Phase 1 failed for {TABLE_NAME}")
         return False
     
     if not migrate_source_phase2():
-        print(f"❌ Phase 2 failed for {TABLE_NAME}")
+        print(f" Phase 2 failed for {TABLE_NAME}")
         return False
     
     if not migrate_source_phase3():
-        print(f"❌ Phase 3 failed for {TABLE_NAME}")
+        print(f" Phase 3 failed for {TABLE_NAME}")
         return False
     
-    print(f"🎉 Full Source migration completed successfully!")
+    print(f" Full Source migration completed successfully!")
     return True
 
 def verify_source_migration():
     """Verify Source table migration"""
-    print(f"🔍 Verifying table structure for {TABLE_NAME}")
+    print(f" Verifying table structure for {TABLE_NAME}")
     return verify_table_structure(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
 
 def main():
@@ -448,10 +448,10 @@ def main():
         return 1
     
     if success:
-        print("🎉 Operation completed successfully!")
+        print(" Operation completed successfully!")
         return 0
     else:
-        print("❌ Operation failed!")
+        print(" Operation failed!")
         return 1
 
 if __name__ == "__main__":

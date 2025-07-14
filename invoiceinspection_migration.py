@@ -45,14 +45,14 @@ TABLE_NAME = "InvoiceInspection"
 
 def get_invoiceinspection_table_info():
     """Get complete InvoiceInspection table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     
     # Extract DDL
@@ -71,7 +71,7 @@ def get_invoiceinspection_table_info():
                 break
     
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -82,7 +82,7 @@ def get_invoiceinspection_table_info():
     indexes = extract_invoiceinspection_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_invoiceinspection_foreign_keys_from_ddl(mysql_ddl)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_invoiceinspection_indexes_from_ddl(ddl):
@@ -139,7 +139,7 @@ def extract_invoiceinspection_foreign_keys_from_ddl(ddl):
 
 def convert_invoiceinspection_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert InvoiceInspection table MySQL DDL to PostgreSQL DDL with InvoiceInspection-specific optimizations"""
-    print(f"🔄 Converting InvoiceInspection table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting InvoiceInspection table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -147,7 +147,7 @@ def convert_invoiceinspection_mysql_to_postgresql_ddl(mysql_ddl, include_constra
     # Extract just the column definitions part
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     
     columns_part = create_match.group(1)
@@ -192,7 +192,7 @@ def process_invoiceinspection_column_definition(line, preserve_case):
     # InvoiceInspection-specific fix: Make title column nullable due to many NULL values in source data
     if '"title"' in line and 'NOT NULL' in line:
         line = line.replace('NOT NULL', '')
-        print(f"🔧 Made title column nullable due to NULL values in source data")
+        print(f" Made title column nullable due to NULL values in source data")
     
     # MySQL to PostgreSQL type conversions for InvoiceInspection
     conversions = [
@@ -253,7 +253,7 @@ def create_invoiceinspection_table(mysql_ddl):
     if not postgres_ddl:
         return False
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -263,10 +263,10 @@ def create_invoiceinspection_table(mysql_ddl):
 def create_invoiceinspection_indexes(indexes):
     """Create indexes for InvoiceInspection table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     for index in indexes:
@@ -286,14 +286,14 @@ def create_invoiceinspection_indexes(indexes):
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     
     return success
@@ -301,10 +301,10 @@ def create_invoiceinspection_indexes(indexes):
 def create_invoiceinspection_foreign_keys(foreign_keys):
     """Create foreign keys for InvoiceInspection table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created = 0
     skipped = 0
@@ -326,17 +326,17 @@ def create_invoiceinspection_foreign_keys(foreign_keys):
         
         fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_cols}) REFERENCES {ref_table} ({ref_cols}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
         
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success_flag, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         
         if success_flag and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
             created += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
     
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created} created, {skipped} skipped")
+    print(f" {TABLE_NAME} Foreign Keys: {created} created, {skipped} skipped")
     return True
 
 def main():
@@ -359,34 +359,34 @@ def main():
     success = True
     
     if args.verify:
-        print(f"🔍 Verifying {TABLE_NAME} table structure and data")
+        print(f" Verifying {TABLE_NAME} table structure and data")
         return verify_table_structure(TABLE_NAME, PRESERVE_MYSQL_CASE)
     
     if args.phase == '1' or args.full:
-        print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+        print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
         if create_invoiceinspection_table(mysql_ddl):
             data_indicator = export_and_clean_mysql_data(TABLE_NAME)
             import_data_to_postgresql(TABLE_NAME, data_indicator, PRESERVE_MYSQL_CASE, include_id=True)
             add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
             setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
-            print(f"✅ Phase 1 complete for {TABLE_NAME}")
+            print(f" Phase 1 complete for {TABLE_NAME}")
         else:
             success = False
     
     if args.phase == '2' or args.full:
-        print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+        print(f" Phase 2: Creating indexes for {TABLE_NAME}")
         if not create_invoiceinspection_indexes(indexes):
             success = False
     
     if args.phase == '3' or args.full:
-        print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+        print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
         if not create_invoiceinspection_foreign_keys(foreign_keys):
             success = False
     
     if success:
-        print("🎉 Operation completed successfully!")
+        print(" Operation completed successfully!")
     else:
-        print("❌ Operation completed with errors!")
+        print(" Operation completed with errors!")
 
 if __name__ == "__main__":
     main()

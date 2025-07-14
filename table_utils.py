@@ -42,6 +42,7 @@ def execute_postgresql_sql(sql_statement, description="SQL statement"):
     
     if not copy_result or copy_result.returncode != 0:
         print(f" Failed to copy {description} file")
+        print(f" Failed to copy {description} file")
         return False, None
     
     result = run_command('docker exec postgres_target psql -U postgres -d target_db -f /tmp/temp_sql.sql')
@@ -59,6 +60,7 @@ def get_mysql_table_columns(table_name):
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE `{table_name}`;"'
     result = run_command(cmd)
     if not result or result.returncode != 0:
+        print(f" Failed to get MySQL columns: {result.stderr if result else 'No result'}")
         print(f" Failed to get MySQL columns: {result.stderr if result else 'No result'}")
         return None
     columns = []
@@ -112,6 +114,7 @@ def get_postgresql_table_columns(table_name, preserve_case=True):
     
     if not result or result.returncode != 0:
         print(f" Failed to get PostgreSQL columns: {result.stderr if result else 'No result'}")
+        print(f" Failed to get PostgreSQL columns: {result.stderr if result else 'No result'}")
         return None
     
     columns = []
@@ -133,6 +136,7 @@ def get_postgresql_table_columns(table_name, preserve_case=True):
                     'default': parts[3] if parts[3] else None
                 })
     
+    print(f" Found {len(columns)} PostgreSQL columns")
     print(f" Found {len(columns)} PostgreSQL columns")
     return columns
 
@@ -192,12 +196,16 @@ def compare_table_structures(table_name, preserve_case=True):
     
     if mysql_columns is None:
         print(" Could not get MySQL table structure")
+        print(" Could not get MySQL table structure")
         return False
     
     if postgres_columns is None:
         print(" Could not get PostgreSQL table structure")
+        print(" Could not get PostgreSQL table structure")
         return False
     
+    print(f" MySQL has {len(mysql_columns)} columns")
+    print(f" PostgreSQL has {len(postgres_columns)} columns")
     print(f" MySQL has {len(mysql_columns)} columns")
     print(f" PostgreSQL has {len(postgres_columns)} columns")
     
@@ -215,6 +223,7 @@ def compare_table_structures(table_name, preserve_case=True):
     matches = 0
     
     print(f"\n Column-by-column comparison:")
+    print(f"\n Column-by-column comparison:")
     print("-" * 80)
     print(f"{'Column':<20} {'MySQL Type':<25} {'PostgreSQL Type':<25} {'Status'}")
     print("-" * 80)
@@ -230,9 +239,11 @@ def compare_table_structures(table_name, preserve_case=True):
         if not mysql_col:
             pg_type = postgres_col['type'] if postgres_col else 'unknown'
             print(f"{postgres_display_name:<20} {'(missing)':<25} {pg_type:<25}  Only in PostgreSQL")
+            print(f"{postgres_display_name:<20} {'(missing)':<25} {pg_type:<25}  Only in PostgreSQL")
             differences.append(f"Column '{postgres_display_name}' only exists in PostgreSQL")
         elif not postgres_col:
             my_type = mysql_col['type'] if mysql_col else 'unknown'
+            print(f"{mysql_display_name:<20} {my_type:<25} {'(missing)':<25}  Only in MySQL")
             print(f"{mysql_display_name:<20} {my_type:<25} {'(missing)':<25}  Only in MySQL")
             differences.append(f"Column '{mysql_display_name}' only exists in MySQL")
         else:
@@ -254,8 +265,10 @@ def compare_table_structures(table_name, preserve_case=True):
             
             if type_match and null_match:
                 print(f"{mysql_display_name:<20} {mysql_col['type']:<25} {postgres_col['type']:<25}  Match")
+                print(f"{mysql_display_name:<20} {mysql_col['type']:<25} {postgres_col['type']:<25}  Match")
                 matches += 1
             else:
+                status = " "
                 status = " "
                 if not type_match:
                     status += "Type mismatch "
@@ -306,9 +319,12 @@ def verify_table_structure(table_name, preserve_case=True):
     
     if not mysql_exists:
         print(f" MySQL table '{table_name}' does not exist!")
+        print(f" MySQL table '{table_name}' does not exist!")
         return False
     
     if not postgres_exists:
+        print(f" PostgreSQL table '{pg_table_name}' does not exist!")
+        print(" Run the migration script first to create the table")
         print(f" PostgreSQL table '{pg_table_name}' does not exist!")
         print(" Run the migration script first to create the table")
         return False
@@ -330,6 +346,7 @@ def check_docker_containers():
     
     if not mysql_running or not postgres_running:
         print("\n Please start the required Docker containers first:")
+        print("\n Please start the required Docker containers first:")
         if not mysql_running:
             print("   docker start mysql_source")
         if not postgres_running:
@@ -340,6 +357,7 @@ def check_docker_containers():
 
 def count_table_records(table_name):
     """Count records in both MySQL and PostgreSQL tables"""
+    print(f" Counting records in both {table_name} tables...")
     print(f" Counting records in both {table_name} tables...")
     
     # MySQL count
@@ -363,9 +381,12 @@ def count_table_records(table_name):
     
     print(f" MySQL {table_name} records: {mysql_count}")
     print(f" PostgreSQL {table_name.lower()} records: {postgres_count}")
+    print(f" MySQL {table_name} records: {mysql_count}")
+    print(f" PostgreSQL {table_name.lower()} records: {postgres_count}")
     
     if mysql_count != "Error" and postgres_count != "Error":
         if mysql_count == postgres_count:
+            print(" Record counts match!")
             print(" Record counts match!")
             return True, mysql_count, postgres_count
         else:
@@ -386,6 +407,7 @@ def get_mysql_table_info(table_name):
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
+        print(f" Failed to get table info: {result.stderr if result else 'No result'}")
         print(f" Failed to get table info: {result.stderr if result else 'No result'}")
         return None
     
@@ -464,6 +486,7 @@ def analyze_column_differences(table_name):
         for suggestion in suggestions:
             print(f"   {suggestion}")
     else:
+        print(f"\n No column issues found!")
         print(f"\n No column issues found!")
 
 def create_postgresql_table(table_name, postgres_ddl, preserve_case=True):
@@ -956,7 +979,7 @@ def get_postgresql_column_name(mysql_column_name, preserve_case=True):
 
 def setup_auto_increment_sequence(table_name, preserve_case=True):
     """Setup auto-increment sequence for a table with preserved MySQL IDs"""
-    print(f"🔧 Setting up auto-increment sequence for {table_name}...")
+    print(f" Setting up auto-increment sequence for {table_name}...")
     
     # Get PostgreSQL table name
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
@@ -974,9 +997,11 @@ def setup_auto_increment_sequence(table_name, preserve_case=True):
     
     if not copy_result or copy_result.returncode != 0:
         print(f" Failed to copy max ID query file")
+        print(f" Failed to copy max ID query file")
         return False
     
     max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_id.sql'
+    print(f" Debug: max_id_cmd={max_id_cmd}")
     print(f" Debug: max_id_cmd={max_id_cmd}")
     max_result = run_command(max_id_cmd)
     
@@ -985,6 +1010,7 @@ def setup_auto_increment_sequence(table_name, preserve_case=True):
     run_command('docker exec postgres_target rm -f /tmp/get_max_id.sql')
     
     if not max_result or max_result.returncode != 0:
+        print(f" Failed to get max ID for {table_name}")
         print(f" Failed to get max ID for {table_name}")
         if max_result:
             print(f"   Error: {max_result.stderr}")
@@ -995,7 +1021,9 @@ def setup_auto_increment_sequence(table_name, preserve_case=True):
         max_id = int(max_result.stdout.strip())
         next_id = max_id + 1
         print(f" Max ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
+        print(f" Max ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
     except ValueError:
+        print(f" Could not parse max ID for {table_name}")
         print(f" Could not parse max ID for {table_name}")
         return False
     
@@ -1025,6 +1053,7 @@ ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
     
     if not copy_result or copy_result.returncode != 0:
         print(f" Failed to copy sequence setup file")
+        print(f" Failed to copy sequence setup file")
         return False
     
     exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/setup_sequence.sql'
@@ -1036,8 +1065,10 @@ ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
     
     if exec_result and exec_result.returncode == 0:
         print(f" Auto-increment sequence setup complete for {table_name}")
+        print(f" Auto-increment sequence setup complete for {table_name}")
         return True
     else:
+        print(f" Failed to setup sequence for {table_name}")
         print(f" Failed to setup sequence for {table_name}")
         if exec_result:
             print(f"   Error: {exec_result.stderr}")
@@ -1045,7 +1076,7 @@ ALTER COLUMN id SET DEFAULT nextval('{sequence_name}');
 
 def setup_varchar_id_sequence(table_name, preserve_case=True):
     """Setup auto-increment sequence for varchar ID tables (like Invoice)"""
-    print(f"🔧 Setting up varchar ID sequence for {table_name}...")
+    print(f" Setting up varchar ID sequence for {table_name}...")
     
     # Get PostgreSQL table name
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
@@ -1063,9 +1094,11 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
     
     if not copy_result or copy_result.returncode != 0:
         print(f" Failed to copy max varchar ID query file")
+        print(f" Failed to copy max varchar ID query file")
         return False
     
     max_id_cmd = 'docker exec postgres_target psql -U postgres -d target_db -t -f /tmp/get_max_varchar_id.sql'
+    print(f" Debug: max_id_cmd={max_id_cmd}")
     print(f" Debug: max_id_cmd={max_id_cmd}")
     max_result = run_command(max_id_cmd)
     
@@ -1074,6 +1107,7 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
     run_command('docker exec postgres_target rm -f /tmp/get_max_varchar_id.sql')
     
     if not max_result or max_result.returncode != 0:
+        print(f" Failed to get max varchar ID for {table_name}")
         print(f" Failed to get max varchar ID for {table_name}")
         if max_result:
             print(f"   Error: {max_result.stderr}")
@@ -1084,7 +1118,9 @@ def setup_varchar_id_sequence(table_name, preserve_case=True):
         max_id = int(max_result.stdout.strip())
         next_id = max_id + 1
         print(f" Max varchar ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
+        print(f" Max varchar ID in {table_name}: {max_id}, setting sequence to start at: {next_id}")
     except ValueError:
+        print(f" Could not parse max varchar ID for {table_name}")
         print(f" Could not parse max varchar ID for {table_name}")
         return False
     
@@ -1122,6 +1158,7 @@ ALTER COLUMN id SET DEFAULT next_{table_name.lower()}_id();
     
     if not copy_result or copy_result.returncode != 0:
         print(f" Failed to copy varchar sequence setup file")
+        print(f" Failed to copy varchar sequence setup file")
         return False
     
     exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/setup_varchar_sequence.sql'
@@ -1133,8 +1170,10 @@ ALTER COLUMN id SET DEFAULT next_{table_name.lower()}_id();
     
     if exec_result and exec_result.returncode == 0:
         print(f" Varchar ID auto-increment sequence setup complete for {table_name}")
+        print(f" Varchar ID auto-increment sequence setup complete for {table_name}")
         return True
     else:
+        print(f" Failed to setup varchar ID sequence for {table_name}")
         print(f" Failed to setup varchar ID sequence for {table_name}")
         if exec_result:
             print(f"   Error: {exec_result.stderr}")
@@ -1142,7 +1181,7 @@ ALTER COLUMN id SET DEFAULT next_{table_name.lower()}_id();
 
 def add_primary_key_constraint(table_name, preserve_case=True):
     """Add PRIMARY KEY constraint to a table"""
-    print(f"🔑 Adding PRIMARY KEY constraint to {table_name}...")
+    print(f" Adding PRIMARY KEY constraint to {table_name}...")
     
     # Get PostgreSQL table name
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
@@ -1160,6 +1199,7 @@ def add_primary_key_constraint(table_name, preserve_case=True):
     
     if not copy_result or copy_result.returncode != 0:
         print(f" Failed to copy primary key file")
+        print(f" Failed to copy primary key file")
         return False
     
     exec_cmd = 'docker exec postgres_target psql -U postgres -d target_db -f /tmp/add_primary_key.sql'
@@ -1171,8 +1211,10 @@ def add_primary_key_constraint(table_name, preserve_case=True):
     
     if exec_result and exec_result.returncode == 0:
         print(f" PRIMARY KEY constraint added to {table_name}")
+        print(f" PRIMARY KEY constraint added to {table_name}")
         return True
     else:
+        print(f" PRIMARY KEY constraint may already exist for {table_name}")
         print(f" PRIMARY KEY constraint may already exist for {table_name}")
         # Don't return False here as the constraint might already exist
         return True

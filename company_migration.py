@@ -42,14 +42,14 @@ TABLE_NAME = "Company"
 
 def get_company_table_info():
     """Get complete Company table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get Company table structure: {result.stderr if result else 'No result'}")
+        print(f" Failed to get Company table structure: {result.stderr if result else 'No result'}")
         return None, None, None
 
     
@@ -63,14 +63,14 @@ def get_company_table_info():
                 break
     
     if not create_statement:
-        print("❌ Could not find CREATE TABLE statement for Company")
+        print(" Could not find CREATE TABLE statement for Company")
         return None, None, None
     
     # Extract different components
     indexes = extract_company_indexes_from_ddl(create_statement)
     foreign_keys = extract_company_foreign_keys_from_ddl(create_statement)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for Company table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for Company table")
     return create_statement, indexes, foreign_keys
 
 def extract_company_indexes_from_ddl(ddl):
@@ -133,7 +133,7 @@ def extract_company_foreign_keys_from_ddl(ddl):
 
 def convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert Company table MySQL DDL to PostgreSQL DDL with Company-specific optimizations"""
-    print(f"🔄 Converting Company table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting Company table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Company-specific type mappings
     company_type_mappings = OrderedDict([
@@ -291,10 +291,10 @@ def convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False
 def create_company_indexes(indexes):
     """Create indexes for Company table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     created_indexes = set()  # Track created index names to avoid duplicates
@@ -304,7 +304,7 @@ def create_company_indexes(indexes):
         
         # Skip duplicates (can happen with UNIQUE variants)
         if index_name in created_indexes:
-            print(f"⚠️ Skipping duplicate index: {index_name}")
+            print(f" Skipping duplicate index: {index_name}")
             continue
             
         created_indexes.add(index_name)
@@ -316,7 +316,7 @@ def create_company_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f"🔧 Creating Company index: {index_name}")
+        print(f" Creating Company index: {index_name}")
         
         # Write to file and execute
         sql_file = f"create_company_index_{index_name}.sql"
@@ -338,9 +338,9 @@ def create_company_indexes(indexes):
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created Company index: {index_name}")
+            print(f" Created Company index: {index_name}")
         else:
-            print(f"❌ Failed to create Company index: {index_name}")
+            print(f" Failed to create Company index: {index_name}")
             if result:
                 print(f"   Error: {result.stderr}")
                 print(f"   SQL: {create_index_sql}")
@@ -366,10 +366,10 @@ def check_company_referenced_table_exists(ref_table):
 def create_company_foreign_keys(foreign_keys):
     """Create foreign key constraints for Company table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created_count = 0
     skipped_count = 0
@@ -380,7 +380,7 @@ def create_company_foreign_keys(foreign_keys):
         
         # Check if referenced table exists
         if not check_company_referenced_table_exists(ref_table):
-            print(f"⚠️ Skipping Company FK {fk['name']}: Referenced table '{ref_table}' does not exist")
+            print(f" Skipping Company FK {fk['name']}: Referenced table '{ref_table}' does not exist")
             skipped_count += 1
             continue
         
@@ -413,7 +413,7 @@ ON DELETE {on_delete}
 ON UPDATE {on_update};
 """
         
-        print(f"🔧 Creating Company FK: {constraint_name} -> {ref_table}")
+        print(f" Creating Company FK: {constraint_name} -> {ref_table}")
         
         # Write to file and execute
         sql_file = f"create_company_fk_{constraint_name}.sql"
@@ -435,17 +435,17 @@ ON UPDATE {on_update};
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created Company FK: {constraint_name}")
+            print(f" Created Company FK: {constraint_name}")
             created_count += 1
         else:
-            print(f"⚠️ Failed to create Company FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
+            print(f" Failed to create Company FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
     
-    print(f"🎯 Company Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f" Company Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def migrate_company_phase1():
     """Phase 1: Create Company table and import data (no constraints)"""
-    print(f"🚀 Phase 1: Creating Company table and importing data")
+    print(f" Phase 1: Creating Company table and importing data")
     
     # Get Company table info
     mysql_ddl, indexes, foreign_keys = get_company_table_info()
@@ -455,7 +455,7 @@ def migrate_company_phase1():
     # Convert DDL without constraints
     postgres_ddl = convert_company_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
-    print(f"📋 Generated PostgreSQL DDL for Company:")
+    print(f" Generated PostgreSQL DDL for Company:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -475,15 +475,15 @@ def migrate_company_phase1():
     
     # Setup auto-increment sequence for preserved IDs
     if not setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
-        print("⚠️ Warning: Could not setup auto-increment sequence")
-        print("⚠️ Warning: Could not setup auto-increment sequence")
+        print(" Warning: Could not setup auto-increment sequence")
+        print(" Warning: Could not setup auto-increment sequence")
 
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def migrate_company_phase2():
     """Phase 2: Create indexes for Company table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_company_table_info()
     if not mysql_ddl:
@@ -493,7 +493,7 @@ def migrate_company_phase2():
 
 def migrate_company_phase3():
     """Phase 3: Create foreign keys for Company table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_company_table_info()
     if not mysql_ddl:
@@ -514,12 +514,12 @@ def main():
     args = parser.parse_args()
     
     if args.verify:
-        print(f"🔍 Verifying table structure for {TABLE_NAME}")
+        print(f" Verifying table structure for {TABLE_NAME}")
         success = verify_company_structure()
         return success
     
     if args.full:
-        print(f"🚀 Running full migration for {TABLE_NAME}")
+        print(f" Running full migration for {TABLE_NAME}")
         success = (
             migrate_company_phase1() and
             migrate_company_phase2() and
@@ -532,13 +532,13 @@ def main():
     elif args.phase == 3:
         success = migrate_company_phase3()
     else:
-        print("❌ Please specify --phase, --full, or --verify")
+        print(" Please specify --phase, --full, or --verify")
         return False
     
     if success:
-        print("🎉 Operation completed successfully!")
+        print(" Operation completed successfully!")
     else:
-        print("❌ Operation failed!")
+        print(" Operation failed!")
     
     return success
 

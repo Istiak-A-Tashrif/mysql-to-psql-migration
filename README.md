@@ -2,7 +2,7 @@
 
 This project provides dedicated migration scripts for migrating MySQL tables to PostgreSQL with full preservation of MySQL case-sensitive naming and original ID values.
 
-## 🚀 Features
+##  Features
 
 - **Case Preservation**: Maintains MySQL case-sensitive table and column names in PostgreSQL
 - **ID Preservation**: Preserves original MySQL ID values with proper auto-increment setup
@@ -34,7 +34,7 @@ This project provides dedicated migration scripts for migrating MySQL tables to 
 - **`table_utils.py`** - Shared functions for DDL conversion, data transfer, and verification
 - **`verify_table_structure.py`** - Compare table structures between MySQL and PostgreSQL
 
-## 📋 Usage
+##  Usage
 
 ### 1. Start Docker Containers
 ```bash
@@ -99,7 +99,7 @@ python appointment_migration.py --verify
 - Validates referenced tables exist before creating constraints
 - Preserves MySQL referential actions (CASCADE, RESTRICT, etc.)
 
-## 🔧 Migration Process
+##  Migration Process
 
 1. **DDL Conversion**: Converts MySQL CREATE TABLE to PostgreSQL syntax
 2. **Data Export**: Extracts data from MySQL with proper encoding
@@ -109,7 +109,7 @@ python appointment_migration.py --verify
 6. **Index Creation**: Creates indexes matching MySQL structure
 7. **Foreign Key Creation**: Adds referential integrity constraints
 
-## 📊 Supported Data Types
+##  Supported Data Types
 
 | MySQL | PostgreSQL | Notes |
 |-------|------------|-------|
@@ -120,13 +120,13 @@ python appointment_migration.py --verify
 | `enum(...)` | `VARCHAR(50)` | Enum converted to varchar |
 | `tinyint(1)` | `BOOLEAN` | MySQL boolean equivalent |
 
-## 🎯 Migration Status
+##  Migration Status
 
 | Table | Structure | Data | Indexes | Foreign Keys | Status |
 |-------|-----------|------|---------|--------------|---------|
-| Company | ✅ | ✅ (27 records) | ✅ (4 indexes) | ✅ | Complete |
-| User | ✅ | ✅ (151 records) | ✅ (3 indexes) | ✅ | Complete |
-| Appointment | ✅ | ✅ (329 records) | ✅ | ✅ | Complete |
+| Company |  |  (27 records) |  (4 indexes) |  | Complete |
+| User |  |  (151 records) |  (3 indexes) |  | Complete |
+| Appointment |  |  (329 records) |  |  | Complete |
 
 ## 🐳 Docker Environment
 
@@ -142,7 +142,7 @@ python appointment_migration.py --verify
 - Case-sensitive naming requires quoted identifiers in PostgreSQL
 - Auto-increment sequences start from MAX(existing_id) + 1
 
-## 🔍 Verification
+##  Verification
 
 Use the verification tools to ensure migration success:
 ```bash
@@ -152,8 +152,8 @@ python verify_table_structure.py Appointment
 ```
 
 Verification checks:
-- ✅ Table existence
-- ✅ Column count and names
-- ✅ Data type compatibility
-- ✅ Record count matching
-- ✅ Sample data comparison
+-  Table existence
+-  Column count and names
+-  Data type compatibility
+-  Record count matching
+-  Sample data comparison

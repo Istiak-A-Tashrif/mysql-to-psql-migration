@@ -43,11 +43,11 @@ TABLE_NAME = "CashPayment"
 
 def get_cashpayment_table_info():
     """Get complete CashPayment table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     lines = result.stdout.strip().split("\n")
     ddl_line = None
@@ -61,14 +61,14 @@ def get_cashpayment_table_info():
             if ddl_line:
                 break
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
     mysql_ddl = ddl_line.strip()
     indexes = extract_cashpayment_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_cashpayment_foreign_keys_from_ddl(mysql_ddl)
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_cashpayment_indexes_from_ddl(ddl):
@@ -112,11 +112,11 @@ def extract_cashpayment_foreign_keys_from_ddl(ddl):
     return foreign_keys
 
 def convert_cashpayment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
-    print(f"🔄 Converting CashPayment table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting CashPayment table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     columns_part = create_match.group(1)
     lines = []
@@ -186,7 +186,7 @@ def create_cashpayment_table(mysql_ddl):
     postgres_ddl = convert_cashpayment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     if not postgres_ddl:
         return False
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -194,9 +194,9 @@ def create_cashpayment_table(mysql_ddl):
 
 def create_cashpayment_indexes(indexes):
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     success = True
     for index in indexes:
         index_name = f"{TABLE_NAME.lower()}_{index['name']}"
@@ -210,21 +210,21 @@ def create_cashpayment_indexes(indexes):
             continue
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     return success
 
 def create_cashpayment_foreign_keys(foreign_keys):
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     created_count = 0
     skipped_count = 0
     for fk in foreign_keys:
@@ -241,19 +241,19 @@ def create_cashpayment_foreign_keys(foreign_keys):
             skipped_count += 1
             continue
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         if success and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+    print(f" {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def phase1_create_table_and_data():
-    print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+    print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
     mysql_ddl, indexes, foreign_keys = get_cashpayment_table_info()
     if not mysql_ddl:
         return False
@@ -267,18 +267,18 @@ def phase1_create_table_and_data():
         return False
     if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
         return False
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def phase2_create_indexes():
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     mysql_ddl, indexes, foreign_keys = get_cashpayment_table_info()
     if mysql_ddl is None:
         return False
     return create_cashpayment_indexes(indexes)
 
 def phase3_create_foreign_keys():
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     mysql_ddl, indexes, foreign_keys = get_cashpayment_table_info()
     if mysql_ddl is None:
         return False
@@ -300,9 +300,9 @@ def main():
                   phase2_create_indexes() and 
                   phase3_create_foreign_keys())
         if success:
-            print("🎉 Operation completed successfully!")
+            print(" Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print(" Operation failed!")
             exit(1)
         return
     if args.phase == '1':

@@ -43,14 +43,14 @@ TABLE_NAME = "Appointment"
 
 def get_appointment_table_info():
     """Get complete Appointment table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get Appointment table structure: {result.stderr if result else 'No result'}")
+        print(f" Failed to get Appointment table structure: {result.stderr if result else 'No result'}")
         return None, None, None
 
     
@@ -64,14 +64,14 @@ def get_appointment_table_info():
                 break
     
     if not create_statement:
-        print("❌ Could not find CREATE TABLE statement for Appointment")
+        print(" Could not find CREATE TABLE statement for Appointment")
         return None, None, None
     
     # Extract different components
     indexes = extract_appointment_indexes_from_ddl(create_statement)
     foreign_keys = extract_appointment_foreign_keys_from_ddl(create_statement)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for Appointment table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for Appointment table")
     return create_statement, indexes, foreign_keys
 
 def extract_appointment_indexes_from_ddl(ddl):
@@ -134,7 +134,7 @@ def extract_appointment_foreign_keys_from_ddl(ddl):
 
 def convert_appointment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert Appointment table MySQL DDL to PostgreSQL DDL with Appointment-specific optimizations"""
-    print(f"🔄 Converting Appointment table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting Appointment table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Appointment-specific type mappings
     appointment_type_mappings = OrderedDict([
@@ -284,10 +284,10 @@ def convert_appointment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=F
 def create_appointment_indexes(indexes):
     """Create indexes for Appointment table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     for index in indexes:
         index_name = f"{TABLE_NAME.lower()}_{index['name']}"
@@ -307,7 +307,7 @@ def create_appointment_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f"🔧 Creating Appointment index: {index_name}")
+        print(f" Creating Appointment index: {index_name}")
         
         # Write to file and execute
         sql_file = f"create_appointment_index_{index_name}.sql"
@@ -329,9 +329,9 @@ def create_appointment_indexes(indexes):
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created Appointment index: {index_name}")
+            print(f" Created Appointment index: {index_name}")
         else:
-            print(f"⚠️ Failed to create Appointment index {index_name}: {result.stderr if result else 'Unknown error'}")
+            print(f" Failed to create Appointment index {index_name}: {result.stderr if result else 'Unknown error'}")
     
     return True
 
@@ -353,10 +353,10 @@ def check_appointment_referenced_table_exists(ref_table):
 def create_appointment_foreign_keys(foreign_keys):
     """Create foreign key constraints for Appointment table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created_count = 0
     skipped_count = 0
@@ -367,7 +367,7 @@ def create_appointment_foreign_keys(foreign_keys):
         
         # Check if referenced table exists
         if not check_appointment_referenced_table_exists(ref_table):
-            print(f"⚠️ Skipping Appointment FK {fk['name']}: Referenced table '{ref_table}' does not exist")
+            print(f" Skipping Appointment FK {fk['name']}: Referenced table '{ref_table}' does not exist")
             skipped_count += 1
             continue
         
@@ -400,7 +400,7 @@ ON DELETE {on_delete}
 ON UPDATE {on_update};
 """
         
-        print(f"🔧 Creating Appointment FK: {constraint_name} -> {ref_table}")
+        print(f" Creating Appointment FK: {constraint_name} -> {ref_table}")
         
         # Write to file and execute
         sql_file = f"create_appointment_fk_{constraint_name}.sql"
@@ -422,17 +422,17 @@ ON UPDATE {on_update};
         run_command(f"docker exec postgres_target rm /tmp/{sql_file}")
         
         if result and result.returncode == 0:
-            print(f"✅ Created Appointment FK: {constraint_name}")
+            print(f" Created Appointment FK: {constraint_name}")
             created_count += 1
         else:
-            print(f"⚠️ Failed to create Appointment FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
+            print(f" Failed to create Appointment FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
     
-    print(f"🎯 Appointment Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f" Appointment Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def migrate_appointment_phase1():
     """Phase 1: Create Appointment table and import data (no constraints)"""
-    print(f"🚀 Phase 1: Creating Appointment table and importing data")
+    print(f" Phase 1: Creating Appointment table and importing data")
     
     # Get Appointment table info
     mysql_ddl, indexes, foreign_keys = get_appointment_table_info()
@@ -442,7 +442,7 @@ def migrate_appointment_phase1():
     # Convert DDL without constraints
     postgres_ddl = convert_appointment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
-    print(f"📋 Generated PostgreSQL DDL for Appointment:")
+    print(f" Generated PostgreSQL DDL for Appointment:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -462,14 +462,14 @@ def migrate_appointment_phase1():
     
     # Setup auto-increment sequence for preserved IDs
     if not setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE):
-        print("⚠️ Warning: Could not setup auto-increment sequence")
+        print(" Warning: Could not setup auto-increment sequence")
 
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def migrate_appointment_phase2():
     """Phase 2: Create indexes for Appointment table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_appointment_table_info()
     if not mysql_ddl:
@@ -479,7 +479,7 @@ def migrate_appointment_phase2():
 
 def migrate_appointment_phase3():
     """Phase 3: Create foreign keys for Appointment table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_appointment_table_info()
     if not mysql_ddl:
@@ -500,12 +500,12 @@ def main():
     args = parser.parse_args()
     
     if args.verify:
-        print(f"🔍 Verifying table structure for {TABLE_NAME}")
+        print(f" Verifying table structure for {TABLE_NAME}")
         success = verify_appointment_structure()
         return success
     
     if args.full:
-        print(f"🚀 Running full migration for {TABLE_NAME}")
+        print(f" Running full migration for {TABLE_NAME}")
         success = (
             migrate_appointment_phase1() and
             migrate_appointment_phase2() and
@@ -518,13 +518,13 @@ def main():
     elif args.phase == 3:
         success = migrate_appointment_phase3()
     else:
-        print("❌ Please specify --phase, --full, or --verify")
+        print(" Please specify --phase, --full, or --verify")
         return False
     
     if success:
-        print("🎉 Operation completed successfully!")
+        print(" Operation completed successfully!")
     else:
-        print("❌ Operation failed!")
+        print(" Operation failed!")
     
     return success
 

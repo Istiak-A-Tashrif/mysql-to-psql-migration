@@ -45,14 +45,14 @@ TABLE_NAME = "inventoryWirehouseProduct"
 
 def get_inventorywirehouseproduct_table_info():
     """Get complete inventoryWirehouseProduct table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     
     # Extract DDL
@@ -71,7 +71,7 @@ def get_inventorywirehouseproduct_table_info():
                 break
     
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -82,7 +82,7 @@ def get_inventorywirehouseproduct_table_info():
     indexes = extract_inventorywirehouseproduct_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_inventorywirehouseproduct_foreign_keys_from_ddl(mysql_ddl)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_inventorywirehouseproduct_indexes_from_ddl(ddl):
@@ -139,7 +139,7 @@ def extract_inventorywirehouseproduct_foreign_keys_from_ddl(ddl):
 
 def convert_inventorywirehouseproduct_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert inventoryWirehouseProduct table MySQL DDL to PostgreSQL DDL with inventoryWirehouseProduct-specific optimizations"""
-    print(f"🔄 Converting inventoryWirehouseProduct table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting inventoryWirehouseProduct table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -147,7 +147,7 @@ def convert_inventorywirehouseproduct_mysql_to_postgresql_ddl(mysql_ddl, include
     # Extract just the column definitions part
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     
     columns_part = create_match.group(1)
@@ -248,7 +248,7 @@ def create_inventorywirehouseproduct_table(mysql_ddl):
     if not postgres_ddl:
         return False
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -258,10 +258,10 @@ def create_inventorywirehouseproduct_table(mysql_ddl):
 def create_inventorywirehouseproduct_indexes(indexes):
     """Create indexes for inventoryWirehouseProduct table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     for index in indexes:
@@ -281,14 +281,14 @@ def create_inventorywirehouseproduct_indexes(indexes):
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     
     return success
@@ -296,10 +296,10 @@ def create_inventorywirehouseproduct_indexes(indexes):
 def create_inventorywirehouseproduct_foreign_keys(foreign_keys):
     """Create foreign keys for inventoryWirehouseProduct table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created_count = 0
     skipped_count = 0
@@ -324,22 +324,22 @@ def create_inventorywirehouseproduct_foreign_keys(foreign_keys):
         # Create the foreign key constraint
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns});'
         
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         
         if success and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
     
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f" {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def phase1_create_table_and_data():
     """Phase 1: Create inventoryWirehouseProduct table and import data"""
-    print(f"🚀 Phase 1: Creating {TABLE_NAME} table and importing data")
+    print(f" Phase 1: Creating {TABLE_NAME} table and importing data")
     
     # Get table info from MySQL
     mysql_ddl, indexes, foreign_keys = get_inventorywirehouseproduct_table_info()
@@ -365,12 +365,12 @@ def phase1_create_table_and_data():
     if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
         return False
     
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def phase2_create_indexes():
     """Phase 2: Create indexes for inventoryWirehouseProduct table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     # Get indexes from MySQL
     mysql_ddl, indexes, foreign_keys = get_inventorywirehouseproduct_table_info()
@@ -381,7 +381,7 @@ def phase2_create_indexes():
 
 def phase3_create_foreign_keys():
     """Phase 3: Create foreign keys for inventoryWirehouseProduct table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     # Get foreign keys from MySQL
     mysql_ddl, indexes, foreign_keys = get_inventorywirehouseproduct_table_info()
@@ -409,9 +409,9 @@ def main():
                   phase2_create_indexes() and 
                   phase3_create_foreign_keys())
         if success:
-            print("🎉 Operation completed successfully!")
+            print(" Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print(" Operation failed!")
             exit(1)
         return
     

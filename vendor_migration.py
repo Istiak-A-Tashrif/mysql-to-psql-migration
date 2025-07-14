@@ -43,14 +43,14 @@ TABLE_NAME = "Vendor"
 
 def get_vendor_table_info():
     """Get complete Vendor table information from MySQL including constraints"""
-    print(f"🔍 Getting complete table info for {TABLE_NAME} from MySQL...")
+    print(f" Getting complete table info for {TABLE_NAME} from MySQL...")
     
     # Get CREATE TABLE statement
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get MySQL table structure for {TABLE_NAME}: {result.stderr if result else 'No result'}")
+        print(f" Failed to get MySQL table structure for {TABLE_NAME}: {result.stderr if result else 'No result'}")
         return None, [], []
     
     # Parse the output - look for the line containing CREATE TABLE
@@ -66,14 +66,14 @@ def get_vendor_table_info():
                 break
     
     if not mysql_ddl:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         return None, [], []
     
     # Extract indexes and foreign keys
     indexes = extract_vendor_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_vendor_foreign_keys_from_ddl(mysql_ddl)
     
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_vendor_indexes_from_ddl(ddl):
@@ -130,7 +130,7 @@ def extract_vendor_foreign_keys_from_ddl(ddl):
 
 def convert_vendor_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert Vendor table MySQL DDL to PostgreSQL DDL with Vendor-specific optimizations"""
-    print(f"🔄 Converting Vendor table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f" Converting Vendor table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Fix literal \n characters to actual newlines first
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
@@ -210,10 +210,10 @@ def convert_vendor_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False,
 def create_vendor_indexes(indexes):
     """Create indexes for Vendor table"""
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
     
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     
     success = True
     created_indexes = set()
@@ -222,7 +222,7 @@ def create_vendor_indexes(indexes):
         index_name = f"{TABLE_NAME.lower()}_{index['name']}"
         
         if index_name in created_indexes:
-            print(f"⚠️ Skipping duplicate index: {index_name}")
+            print(f" Skipping duplicate index: {index_name}")
             continue
             
         created_indexes.add(index_name)
@@ -233,7 +233,7 @@ def create_vendor_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f"🔧 Creating Vendor index: {index_name}")
+        print(f" Creating Vendor index: {index_name}")
         
         sql_file = f"create_vendor_index_{index_name}.sql"
         with open(sql_file, "w", encoding="utf-8") as f:
@@ -242,7 +242,7 @@ def create_vendor_indexes(indexes):
         copy_cmd = f'docker cp "{sql_file}" postgres_target:/tmp/'
         copy_result = run_command(copy_cmd)
         if not copy_result:
-            print(f"❌ Failed to copy {sql_file} to container")
+            print(f" Failed to copy {sql_file} to container")
             success = False
             continue
             
@@ -255,9 +255,9 @@ def create_vendor_indexes(indexes):
             pass
             
         if result and "CREATE INDEX" in str(result):
-            print(f"✅ Created Vendor index: {index_name}")
+            print(f" Created Vendor index: {index_name}")
         else:
-            print(f"❌ Failed to create Vendor index {index_name}: {result}")
+            print(f" Failed to create Vendor index {index_name}: {result}")
             success = False
     
     return success
@@ -265,10 +265,10 @@ def create_vendor_indexes(indexes):
 def create_vendor_foreign_keys(foreign_keys):
     """Create foreign keys for Vendor table"""
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     
     created = 0
     
@@ -280,7 +280,7 @@ def create_vendor_foreign_keys(foreign_keys):
         
         fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_cols}) REFERENCES {ref_table} ({ref_cols}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
         
-        print(f"🔧 Creating Vendor FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating Vendor FK: {constraint_name} -> {fk['ref_table']}")
         
         sql_file = f"create_vendor_fk_{constraint_name}.sql"
         with open(sql_file, "w", encoding="utf-8") as f:
@@ -289,7 +289,7 @@ def create_vendor_foreign_keys(foreign_keys):
         copy_cmd = f'docker cp "{sql_file}" postgres_target:/tmp/'
         copy_result = run_command(copy_cmd)
         if not copy_result:
-            print(f"❌ Failed to copy {sql_file} to container")
+            print(f" Failed to copy {sql_file} to container")
             continue
             
         cmd = f'docker exec postgres_target psql -U postgres -d target_db -f /tmp/{sql_file}'
@@ -301,17 +301,17 @@ def create_vendor_foreign_keys(foreign_keys):
             pass
             
         if result and "ALTER TABLE" in str(result):
-            print(f"✅ Created Vendor FK: {constraint_name}")
+            print(f" Created Vendor FK: {constraint_name}")
             created += 1
         else:
-            print(f"❌ Failed to create Vendor FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
+            print(f" Failed to create Vendor FK {constraint_name}: {result.stderr if result else 'Unknown error'}")
     
-    print(f"🎯 Vendor Foreign Keys: {created} created")
+    print(f" Vendor Foreign Keys: {created} created")
     return True
 
 def migrate_vendor_phase1():
     """Phase 1: Create Vendor table and import data"""
-    print(f"🚀 Phase 1: Creating Vendor table and importing data")
+    print(f" Phase 1: Creating Vendor table and importing data")
     
     mysql_ddl, indexes, foreign_keys = get_vendor_table_info()
     if not mysql_ddl:
@@ -319,7 +319,7 @@ def migrate_vendor_phase1():
     
     postgres_ddl = convert_vendor_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -348,12 +348,12 @@ def migrate_vendor_phase1():
     if not success:
         return False
         
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def migrate_vendor_phase2():
     """Phase 2: Create indexes for Vendor table"""
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_vendor_table_info()
     if not mysql_ddl:
@@ -363,7 +363,7 @@ def migrate_vendor_phase2():
 
 def migrate_vendor_phase3():
     """Phase 3: Create foreign keys for Vendor table"""
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     
     mysql_ddl, indexes, foreign_keys = get_vendor_table_info()
     if not mysql_ddl:
@@ -380,17 +380,17 @@ def main():
     args = parser.parse_args()
     
     if args.verify:
-        print(f"🔍 Verifying table structure for {TABLE_NAME}")
+        print(f" Verifying table structure for {TABLE_NAME}")
         success = verify_table_structure(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
         if success:
-            print("🎉 Operation completed successfully!")
+            print(" Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print(" Operation failed!")
             exit(1)
         return
     
     if args.full:
-        print(f"🚀 Running full migration for {TABLE_NAME}")
+        print(f" Running full migration for {TABLE_NAME}")
         success = (migrate_vendor_phase1() and 
                   migrate_vendor_phase2() and 
                   migrate_vendor_phase3())
@@ -405,9 +405,9 @@ def main():
         return
     
     if success:
-        print("🎉 Operation completed successfully!")
+        print(" Operation completed successfully!")
     else:
-        print("❌ Operation failed!")
+        print(" Operation failed!")
         exit(1)
 
 if __name__ == "__main__":
