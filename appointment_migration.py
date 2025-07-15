@@ -134,7 +134,7 @@ def extract_appointment_foreign_keys_from_ddl(ddl):
 
 def convert_appointment_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
     """Convert Appointment table MySQL DDL to PostgreSQL DDL with Appointment-specific optimizations"""
-    print(f" Converting Appointment table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
+    print(f"🔄 Converting Appointment table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {preserve_case})...")
     
     # Appointment-specific type mappings
     appointment_type_mappings = OrderedDict([
@@ -307,7 +307,7 @@ def create_appointment_indexes(indexes):
         
         create_index_sql = f"CREATE {unique_clause}INDEX {index_name} ON {table_ref} ({columns});"
         
-        print(f" Creating Appointment index: {index_name}")
+        print(f"🔧 Creating Appointment index: {index_name}")
         
         # Write to file and execute
         sql_file = f"create_appointment_index_{index_name}.sql"
@@ -400,7 +400,7 @@ ON DELETE {on_delete}
 ON UPDATE {on_update};
 """
         
-        print(f" Creating Appointment FK: {constraint_name} -> {ref_table}")
+        print(f"🔧 Creating Appointment FK: {constraint_name} -> {ref_table}")
         
         # Write to file and execute
         sql_file = f"create_appointment_fk_{constraint_name}.sql"
@@ -522,7 +522,7 @@ def main():
         return False
     
     if success:
-        print(" Operation completed successfully!")
+        print("🎉 Operation completed successfully!")
     else:
         print(" Operation failed!")
     

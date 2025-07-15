@@ -47,7 +47,7 @@ def get_column_table_info():
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     lines = result.stdout.strip().split("\n")
     ddl_line = None
@@ -61,7 +61,7 @@ def get_column_table_info():
             if ddl_line:
                 break
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -93,7 +93,7 @@ def convert_column_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False,
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "DESCRIBE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     if result and result.returncode == 0:
-        print(f"📋 MySQL structure for {TABLE_NAME}:")
+        print(f" MySQL structure for {TABLE_NAME}:")
         print(result.stdout)
     
     # Create the PostgreSQL DDL manually based on the known MySQL structure
@@ -107,7 +107,7 @@ def convert_column_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False,
     "updated_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );"""
     
-    print(f"📋 Generated PostgreSQL DDL:")
+    print(f" Generated PostgreSQL DDL:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -155,7 +155,7 @@ def main():
 
     mysql_ddl, indexes, foreign_keys = get_column_table_info()
     if not mysql_ddl:
-        print(f"❌ Could not retrieve MySQL DDL for {TABLE_NAME}")
+        print(f" Could not retrieve MySQL DDL for {TABLE_NAME}")
         return
 
     for phase in phases:

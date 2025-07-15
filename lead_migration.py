@@ -345,7 +345,7 @@ def import_lead_data_with_constraint_handling():
     print(f" Importing {TABLE_NAME} data...")
     # Use robust export and import preserving IDs
     if not robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True):
-        print("❌ Data import failed")
+        print(" Data import failed")
         return False
     print(f" {TABLE_NAME} data import completed successfully")
     return True

@@ -48,7 +48,7 @@ def get_clientcoupon_table_info():
     cmd = f'docker exec mysql_source mysql -u mysql -pmysql source_db -e "SHOW CREATE TABLE `{TABLE_NAME}`;"'
     result = run_command(cmd)
     if not result or result.returncode != 0:
-        print(f"❌ Failed to get {TABLE_NAME} table info from MySQL")
+        print(f" Failed to get {TABLE_NAME} table info from MySQL")
         return None, [], []
     lines = result.stdout.strip().split("\n")
     ddl_line = None
@@ -62,7 +62,7 @@ def get_clientcoupon_table_info():
             if ddl_line:
                 break
     if not ddl_line:
-        print(f"❌ Could not find CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not find CREATE TABLE statement for {TABLE_NAME}")
         print("Debug: MySQL output:")
         print(result.stdout)
         return None, [], []
@@ -117,7 +117,7 @@ def convert_clientcoupon_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=
     postgres_ddl = mysql_ddl.replace('\\n', '\n')
     create_match = re.search(r'CREATE TABLE `[^`]+`\s*\((.*?)\)\s*ENGINE', postgres_ddl, re.DOTALL)
     if not create_match:
-        print(f"❌ Could not parse CREATE TABLE statement for {TABLE_NAME}")
+        print(f" Could not parse CREATE TABLE statement for {TABLE_NAME}")
         return None
     columns_part = create_match.group(1)
     lines = []
@@ -188,7 +188,7 @@ def create_clientcoupon_table(mysql_ddl):
     postgres_ddl = convert_clientcoupon_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
     if not postgres_ddl:
         return False
-    print(f"📋 Generated PostgreSQL DDL for {TABLE_NAME}:")
+    print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
     print("=" * 50)
     print(postgres_ddl)
     print("=" * 50)
@@ -196,9 +196,9 @@ def create_clientcoupon_table(mysql_ddl):
 
 def create_clientcoupon_indexes(indexes):
     if not indexes:
-        print(f"ℹ️ No indexes to create for {TABLE_NAME}")
+        print(f" No indexes to create for {TABLE_NAME}")
         return True
-    print(f"📊 Creating {len(indexes)} indexes for {TABLE_NAME}...")
+    print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     success = True
     for index in indexes:
         index_name = f"{TABLE_NAME.lower()}_{index['name']}"
@@ -218,13 +218,13 @@ def create_clientcoupon_indexes(indexes):
             print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
             success = False
     return success
 
 def create_clientcoupon_foreign_keys(foreign_keys):
     if not foreign_keys:
-        print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
+        print(f" No foreign keys to create for {TABLE_NAME}")
         return True
     print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     created_count = 0
@@ -250,7 +250,7 @@ def create_clientcoupon_foreign_keys(foreign_keys):
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
-            print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
     print(f" {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
@@ -273,7 +273,7 @@ def phase1_create_table_and_data():
     return True
 
 def phase2_create_indexes():
-    print(f"📊 Phase 2: Creating indexes for {TABLE_NAME}")
+    print(f" Phase 2: Creating indexes for {TABLE_NAME}")
     mysql_ddl, indexes, foreign_keys = get_clientcoupon_table_info()
     if mysql_ddl is None:
         return False
@@ -304,7 +304,7 @@ def main():
         if success:
             print("🎉 Operation completed successfully!")
         else:
-            print("❌ Operation failed!")
+            print(" Operation failed!")
             exit(1)
         return
     if args.phase == '1':
