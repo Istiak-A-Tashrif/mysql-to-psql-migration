@@ -301,42 +301,29 @@ def create_servicemaintenanceautomationrule_indexes(indexes):
     return success
 
 def create_servicemaintenanceautomationrule_foreign_keys(foreign_keys):
-    """Create foreign keys for ServiceMaintenanceAutomationRule table"""
-    if not foreign_keys:
-        print(f" No foreign keys to create for {TABLE_NAME}")
-        return True
+    """Create foreign keys for ServiceMaintenanceAutomationRule table using manual commands"""
+    print(f" Creating foreign keys for {TABLE_NAME} using manual commands...")
     
-    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    # Manual foreign key creation commands based on MySQL schema
+    foreign_key_commands = [
+        'ALTER TABLE "ServiceMaintenanceAutomationRule" ADD CONSTRAINT "ServiceMaintenanceAutomationRule_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company" ("id") ON DELETE CASCADE ON UPDATE CASCADE;',
+        'ALTER TABLE "ServiceMaintenanceAutomationRule" ADD CONSTRAINT "ServiceMaintenanceAutomationRule_conditionColumnId_fkey" FOREIGN KEY ("conditionColumnId") REFERENCES "Column" ("id") ON DELETE CASCADE ON UPDATE CASCADE;',
+        'ALTER TABLE "ServiceMaintenanceAutomationRule" ADD CONSTRAINT "ServiceMaintenanceAutomationRule_targetColumnId_fkey" FOREIGN KEY ("targetColumnId") REFERENCES "Column" ("id") ON DELETE CASCADE ON UPDATE CASCADE;'
+    ]
     
-    created = 0
-    skipped = 0
-    
-    for fk in foreign_keys:
-        constraint_name = f"{TABLE_NAME}_{fk['name']}"
-        local_cols = fk['local_columns'].replace('`', '"')
-        ref_table = f'"{fk["ref_table"]}"' if PRESERVE_MYSQL_CASE else fk['ref_table']
-        ref_cols = fk['ref_columns'].replace('`', '"')
-        
-        # Check if foreign key already exists
-        check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = \'{TABLE_NAME}\' AND constraint_name = \'{constraint_name}\' AND constraint_type = \'FOREIGN KEY\';"'
-        check_result = run_command(check_cmd)
-        
-        if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f" Skipping existing FK: {constraint_name}")
-            skipped += 1
-            continue
-        
-        fk_sql = f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_cols}) REFERENCES {ref_table} ({ref_cols}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
-        
-        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
-        success_flag, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
-        
-        if success_flag and result and "ALTER TABLE" in result.stdout:
-            print(f" Created {TABLE_NAME} FK: {constraint_name}")
-            created += 1
+    success_count = 0
+    for fk_sql in foreign_key_commands:
+        success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
+        if success:
+            print(f" Created foreign key successfully")
+            success_count += 1
         else:
-            error_msg = result.stderr if result else "No result"
-            print(f" Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
+            print(f" Failed to create foreign key: {fk_sql}")
+            if result:
+                print(f"   Error: {result.stderr}")
+    
+    print(f" {TABLE_NAME} Foreign Keys: {success_count} created, {len(foreign_key_commands) - success_count} failed")
+    return success_count > 0
     
     print(f" {TABLE_NAME} Foreign Keys: {created} created, {skipped} skipped")
     return True

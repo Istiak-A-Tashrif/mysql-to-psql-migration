@@ -111,12 +111,15 @@ def phase3_create_foreign_keys():
     foreign_keys = [
         f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_inventory_id" FOREIGN KEY ("inventory_id") REFERENCES "InventoryProduct" ("id") ON DELETE CASCADE;',
         f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_vendor_id" FOREIGN KEY ("vendor_id") REFERENCES "Vendor" ("id") ON DELETE SET NULL;',
-        f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_company_id" FOREIGN KEY ("company_id") REFERENCES "Company" ("id") ON DELETE CASCADE;'
+        f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_company_id" FOREIGN KEY ("company_id") REFERENCES "Company" ("id") ON DELETE CASCADE;',
+        f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_invoice_id" FOREIGN KEY ("invoice_id") REFERENCES "Invoice" ("id") ON DELETE SET NULL;'
     ]
     
     for fk_sql in foreign_keys:
         success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
-        if not success:
+        if success:
+            print(f" Created foreign key successfully")
+        else:
             print(f"Warning: Failed to create foreign key: {fk_sql}")
             print(f"Error: {result.stderr if result else 'Unknown error'}")
     
