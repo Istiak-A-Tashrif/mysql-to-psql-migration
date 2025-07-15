@@ -68,7 +68,7 @@ def get_clockinout_table_info():
     mysql_ddl = ddl_line.strip()
     indexes = extract_clockinout_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_clockinout_foreign_keys_from_ddl(mysql_ddl)
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_clockinout_indexes_from_ddl(mysql_ddl):
@@ -135,7 +135,7 @@ def main():
 
     for phase in phases:
         if phase == 1:
-            print(f"\n🚦 Phase 1: Creating table and importing data for {TABLE_NAME}...")
+            print(f"\n Phase 1: Creating table and importing data for {TABLE_NAME}...")
             pg_ddl = convert_clockinout_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=PRESERVE_MYSQL_CASE)
             create_postgresql_table(TABLE_NAME, pg_ddl, preserve_case=PRESERVE_MYSQL_CASE)
             data_indicator = export_and_clean_mysql_data(TABLE_NAME)
@@ -143,11 +143,11 @@ def main():
             add_primary_key_constraint(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
             setup_auto_increment_sequence(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE)
         elif phase == 2:
-            print(f"\n🚦 Phase 2: Creating indexes for {TABLE_NAME}...")
+            print(f"\n Phase 2: Creating indexes for {TABLE_NAME}...")
             for idx in indexes:
                 execute_postgresql_sql(idx, TABLE_NAME)
         elif phase == 3:
-            print(f"\n🚦 Phase 3: Creating foreign keys for {TABLE_NAME}...")
+            print(f"\n Phase 3: Creating foreign keys for {TABLE_NAME}...")
             for fk in foreign_keys:
                 execute_postgresql_sql(fk, TABLE_NAME)
 

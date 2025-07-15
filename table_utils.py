@@ -1329,7 +1329,7 @@ def import_data_with_serial_id_setup(table_name, preserve_case=True):
         print(f" Failed to setup sequence for {table_name}")
         return False
     
-    print(f"✅ {table_name} data import completed successfully")
+    print(f" {table_name} data import completed successfully")
     return True
 
 def robust_import_with_serial_id(table_name, preserve_case=True):
@@ -1366,7 +1366,7 @@ def robust_import_with_serial_id(table_name, preserve_case=True):
         print(f" Failed to setup sequence for {table_name}")
         return False
     
-    print(f"✅ Robust import completed successfully for {table_name}")
+    print(f" Robust import completed successfully for {table_name}")
     return True
 
 def import_clientconversationtrack_with_custom_parsing(csv_file_path, preserve_case=True):
@@ -2152,7 +2152,7 @@ ORDER BY id
             if result.stdout:
                 print(f"Import output: {result.stdout}")
             
-            print(f"✅ MailgunEmail data imported successfully with CSV export method")
+            print(f" MailgunEmail data imported successfully with CSV export method")
             return True
             
         finally:
@@ -2301,7 +2301,7 @@ ORDER BY id" -B --skip-column-names'''
             if result.stdout:
                 print(f"Import output: {result.stdout}")
             
-            print(f"✅ MailgunEmail data imported successfully with simple approach")
+            print(f" MailgunEmail data imported successfully with simple approach")
             return True
             
         finally:
@@ -2358,7 +2358,7 @@ WHERE \"emailBy\" = '' OR \"emailBy\" IS NULL;
         result = run_command(exec_cmd)
         
         if result and result.returncode == 0:
-            print(f"✅ Fixed ENUM values in MailgunEmail")
+            print(f" Fixed ENUM values in MailgunEmail")
             if result.stdout:
                 print(f"Update result: {result.stdout}")
             return True
@@ -2470,7 +2470,7 @@ def fix_mailgunemail_with_direct_sql(preserve_case=True):
         if result.stdout:
             print(f"SQL execution output: {result.stdout}")
         
-        print(f"✅ MailgunEmail data imported successfully with direct SQL approach")
+        print(f" MailgunEmail data imported successfully with direct SQL approach")
         return True
         
     finally:
@@ -2638,7 +2638,7 @@ def fix_marketingautomationrule_with_json_handling(preserve_case=True):
         if result.stderr:
             print(f"SQL execution stderr: {result.stderr}")
         
-        print(f"✅ MarketingAutomationRule data imported successfully with JSON handling")
+        print(f" MarketingAutomationRule data imported successfully with JSON handling")
         return True
         
     finally:

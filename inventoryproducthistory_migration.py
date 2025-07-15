@@ -80,6 +80,49 @@ def phase1_create_table_and_data():
     
     return True
 
+def phase2_create_indexes():
+    """Phase 2: Create indexes for InventoryProductHistory"""
+    print(f"Phase 2: Creating indexes for {TABLE_NAME}")
+    
+    # Create indexes for InventoryProductHistory
+    indexes = [
+        f'CREATE INDEX IF NOT EXISTS "idx_{TABLE_NAME}_inventory_id" ON "{TABLE_NAME}" ("inventory_id");',
+        f'CREATE INDEX IF NOT EXISTS "idx_{TABLE_NAME}_vendor_id" ON "{TABLE_NAME}" ("vendor_id");',
+        f'CREATE INDEX IF NOT EXISTS "idx_{TABLE_NAME}_company_id" ON "{TABLE_NAME}" ("company_id");',
+        f'CREATE INDEX IF NOT EXISTS "idx_{TABLE_NAME}_type" ON "{TABLE_NAME}" ("type");',
+        f'CREATE INDEX IF NOT EXISTS "idx_{TABLE_NAME}_date" ON "{TABLE_NAME}" ("date");',
+        f'CREATE INDEX IF NOT EXISTS "idx_{TABLE_NAME}_created_at" ON "{TABLE_NAME}" ("created_at");'
+    ]
+    
+    for index_sql in indexes:
+        success, result = execute_postgresql_sql(index_sql, f"Index creation for {TABLE_NAME}")
+        if not success:
+            print(f"Warning: Failed to create index: {index_sql}")
+            print(f"Error: {result.stderr if result else 'Unknown error'}")
+    
+    print(f"Phase 2 complete for {TABLE_NAME}")
+    return True
+
+def phase3_create_foreign_keys():
+    """Phase 3: Create foreign key constraints"""
+    print(f"Phase 3: Creating foreign keys for {TABLE_NAME}")
+    
+    # Create foreign key constraints for InventoryProductHistory
+    foreign_keys = [
+        f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_inventory_id" FOREIGN KEY ("inventory_id") REFERENCES "InventoryProduct" ("id") ON DELETE CASCADE;',
+        f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_vendor_id" FOREIGN KEY ("vendor_id") REFERENCES "Vendor" ("id") ON DELETE SET NULL;',
+        f'ALTER TABLE "{TABLE_NAME}" ADD CONSTRAINT "fk_{TABLE_NAME}_company_id" FOREIGN KEY ("company_id") REFERENCES "Company" ("id") ON DELETE CASCADE;'
+    ]
+    
+    for fk_sql in foreign_keys:
+        success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
+        if not success:
+            print(f"Warning: Failed to create foreign key: {fk_sql}")
+            print(f"Error: {result.stderr if result else 'Unknown error'}")
+    
+    print(f"Phase 3 complete for {TABLE_NAME}")
+    return True
+
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(description='Migrate InventoryProductHistory table from MySQL to PostgreSQL')
@@ -99,11 +142,21 @@ def main():
         if not phase1_create_table_and_data():
             print(f"Phase 1 failed for {TABLE_NAME}")
             return False
+        if not phase2_create_indexes():
+            print(f"Phase 2 failed for {TABLE_NAME}")
+            return False
+        if not phase3_create_foreign_keys():
+            print(f"Phase 3 failed for {TABLE_NAME}")
+            return False
         print(f"Full migration completed for {TABLE_NAME}")
         return True
     
     if args.phase == '1':
         return phase1_create_table_and_data()
+    elif args.phase == '2':
+        return phase2_create_indexes()
+    elif args.phase == '3':
+        return phase3_create_foreign_keys()
     
     print(f"Phase {args.phase} not implemented yet")
     return True

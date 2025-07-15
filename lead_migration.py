@@ -281,7 +281,7 @@ def create_lead_indexes(indexes):
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing index: {index_name}")
+            print(f" Skipping existing index: {index_name}")
             continue
         
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
@@ -321,7 +321,7 @@ def create_lead_foreign_keys(foreign_keys):
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing FK: {constraint_name}")
+            print(f" Skipping existing FK: {constraint_name}")
             skipped += 1
             continue
         
@@ -347,7 +347,7 @@ def import_lead_data_with_constraint_handling():
     if not robust_export_and_import_data(TABLE_NAME, preserve_case=PRESERVE_MYSQL_CASE, include_id=True):
         print("❌ Data import failed")
         return False
-    print(f"✅ {TABLE_NAME} data import completed successfully")
+    print(f" {TABLE_NAME} data import completed successfully")
     return True
 
 def main():

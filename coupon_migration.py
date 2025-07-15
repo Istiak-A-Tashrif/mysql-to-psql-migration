@@ -324,7 +324,7 @@ def create_coupon_indexes(indexes):
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing index: {index_name}")
+            print(f" Skipping existing index: {index_name}")
             continue
         
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
@@ -366,7 +366,7 @@ def create_coupon_foreign_keys(foreign_keys):
         check_result = run_command(check_cmd)
         
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing FK: {constraint_name}")
+            print(f" Skipping existing FK: {constraint_name}")
             skipped_count += 1
             continue
         

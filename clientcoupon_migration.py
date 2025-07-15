@@ -69,7 +69,7 @@ def get_clientcoupon_table_info():
     mysql_ddl = ddl_line.strip()
     indexes = extract_clientcoupon_indexes_from_ddl(mysql_ddl)
     foreign_keys = extract_clientcoupon_foreign_keys_from_ddl(mysql_ddl)
-    print(f"✅ Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
+    print(f" Found {len(indexes)} indexes and {len(foreign_keys)} foreign keys for {TABLE_NAME} table")
     return mysql_ddl, indexes, foreign_keys
 
 def extract_clientcoupon_indexes_from_ddl(ddl):
@@ -208,14 +208,14 @@ def create_clientcoupon_indexes(indexes):
         check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT indexname FROM pg_indexes WHERE tablename = \'{table_name_for_check}\' AND indexname = \'{index_name}\';"'
         check_result = run_command(check_cmd)
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing index: {index_name}")
+            print(f" Skipping existing index: {index_name}")
             continue
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
         print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         if success_flag and result and "CREATE INDEX" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} index: {index['name']}")
+            print(f" Created {TABLE_NAME} index: {index['name']}")
         else:
             error_msg = result.stderr if result else "No result"
             print(f"❌ Failed to create {TABLE_NAME} index {index['name']}: {error_msg}")
@@ -239,14 +239,14 @@ def create_clientcoupon_foreign_keys(foreign_keys):
         check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = \'{table_name_for_check}\' AND constraint_type = \'FOREIGN KEY\' AND constraint_name = \'{constraint_name}\';"'
         check_result = run_command(check_cmd)
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing FK: {constraint_name}")
+            print(f" Skipping existing FK: {constraint_name}")
             skipped_count += 1
             continue
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
         print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         if success and result and "ALTER TABLE" in result.stdout:
-            print(f"✅ Created {TABLE_NAME} FK: {constraint_name}")
+            print(f" Created {TABLE_NAME} FK: {constraint_name}")
             created_count += 1
         else:
             error_msg = result.stderr if result else "No result"
@@ -269,7 +269,7 @@ def phase1_create_table_and_data():
         return False
     if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
         return False
-    print(f"✅ Phase 1 complete for {TABLE_NAME}")
+    print(f" Phase 1 complete for {TABLE_NAME}")
     return True
 
 def phase2_create_indexes():

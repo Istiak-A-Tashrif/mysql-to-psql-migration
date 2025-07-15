@@ -206,7 +206,7 @@ def create_calendarsettings_indexes(indexes):
         check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT indexname FROM pg_indexes WHERE tablename = \'{table_name_for_check}\' AND indexname = \'{index_name}\';"'
         check_result = run_command(check_cmd)
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing index: {index_name}")
+            print(f" Skipping existing index: {index_name}")
             continue
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
@@ -237,7 +237,7 @@ def create_calendarsettings_foreign_keys(foreign_keys):
         check_cmd = f'docker exec postgres_target psql -U postgres -d target_db -t -c "SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = \'{table_name_for_check}\' AND constraint_type = \'FOREIGN KEY\' AND constraint_name = \'{constraint_name}\';"'
         check_result = run_command(check_cmd)
         if check_result and check_result.returncode == 0 and check_result.stdout.strip():
-            print(f"⏭️ Skipping existing FK: {constraint_name}")
+            print(f" Skipping existing FK: {constraint_name}")
             skipped_count += 1
             continue
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
