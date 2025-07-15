@@ -74,6 +74,24 @@ def phase2_create_indexes():
 def phase3_create_foreign_keys():
     """Phase 3: Create foreign key constraints"""
     print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
+    
+    from table_utils import execute_postgresql_sql
+    
+    # Create foreign key constraints for CommunicationStage
+    foreign_keys = [
+        'ALTER TABLE "CommunicationStage" ADD CONSTRAINT "CommunicationStage_columnId_fkey" FOREIGN KEY ("columnId") REFERENCES "Column" ("id") ON DELETE CASCADE;',
+        'ALTER TABLE "CommunicationStage" ADD CONSTRAINT "CommunicationStage_communicationRuleId_fkey" FOREIGN KEY ("communicationRuleId") REFERENCES "CommunicationAutomationRule" ("id") ON DELETE CASCADE;'
+    ]
+    
+    for fk_sql in foreign_keys:
+        success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
+        if not success:
+            print(f"Warning: Failed to create foreign key: {fk_sql}")
+            if result:
+                print(f"Error: {result.stderr}")
+        else:
+            print(f"Created foreign key successfully")
+    
     print(f" Phase 3 complete for {TABLE_NAME}")
     return True
 

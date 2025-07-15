@@ -173,8 +173,16 @@ def main():
                 execute_postgresql_sql(idx, TABLE_NAME)
         elif phase == 3:
             print(f"\n Phase 3: Creating foreign keys for {TABLE_NAME}...")
-            for fk in foreign_keys:
-                execute_postgresql_sql(fk, TABLE_NAME)
+            # Create the specific foreign key for Column table
+            from table_utils import execute_postgresql_sql
+            fk_sql = 'ALTER TABLE "Column" ADD CONSTRAINT "Column_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "Company" ("id") ON DELETE CASCADE;'
+            success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
+            if success:
+                print(f"Created foreign key for {TABLE_NAME}")
+            else:
+                print(f"Failed to create foreign key for {TABLE_NAME}")
+                if result:
+                    print(f"Error: {result.stderr}")
 
     if args.verify:
         print(f"\n Verifying {TABLE_NAME} migration...")

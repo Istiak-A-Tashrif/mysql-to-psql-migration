@@ -151,15 +151,15 @@ def process_clientcall_column_definition(line, preserve_case):
     enum_match = re.search(enum_pattern, line, re.IGNORECASE)
     if enum_match:
         line = re.sub(enum_pattern, 'VARCHAR(50)', line, flags=re.IGNORECASE)
-        print(f"🔧 Converted ENUM to VARCHAR for ClientCall")
+        print(f" Converted ENUM to VARCHAR for ClientCall")
     
     # Handle reserved words 'from' and 'to' - ensure they're quoted
     if '"from"' in line:
         line = line.replace('"from"', '"from"')
-        print(f"🔧 Handled reserved word 'from' in ClientCall")
+        print(f" Handled reserved word 'from' in ClientCall")
     if '"to"' in line:
         line = line.replace('"to"', '"to"')
-        print(f"🔧 Handled reserved word 'to' in ClientCall")
+        print(f" Handled reserved word 'to' in ClientCall")
     
     conversions = [
         (r'\btinyint\(1\)\b', 'BOOLEAN'),
@@ -227,7 +227,7 @@ def create_clientcall_indexes(indexes):
             continue
         unique_clause = "UNIQUE " if index.get('unique', False) else ""
         index_sql = f'CREATE {unique_clause}INDEX "{index_name}" ON {table_name} ({columns});'
-        print(f"🔧 Creating {TABLE_NAME} index: {index['name']}")
+        print(f" Creating {TABLE_NAME} index: {index['name']}")
         success_flag, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} index {index['name']}")
         if success_flag and result and "CREATE INDEX" in result.stdout:
             print(f" Created {TABLE_NAME} index: {index['name']}")
@@ -241,7 +241,7 @@ def create_clientcall_foreign_keys(foreign_keys):
     if not foreign_keys:
         print(f"ℹ️ No foreign keys to create for {TABLE_NAME}")
         return True
-    print(f"🔗 Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
     created_count = 0
     skipped_count = 0
     for fk in foreign_keys:
@@ -258,7 +258,7 @@ def create_clientcall_foreign_keys(foreign_keys):
             skipped_count += 1
             continue
         fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ({local_columns}) REFERENCES {ref_table} ({ref_columns}) ON DELETE {fk["on_delete"]} ON UPDATE {fk["on_update"]};'
-        print(f"🔧 Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
+        print(f" Creating {TABLE_NAME} FK: {constraint_name} -> {fk['ref_table']}")
         success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {constraint_name}")
         if success and result and "ALTER TABLE" in result.stdout:
             print(f" Created {TABLE_NAME} FK: {constraint_name}")
@@ -266,7 +266,7 @@ def create_clientcall_foreign_keys(foreign_keys):
         else:
             error_msg = result.stderr if result else "No result"
             print(f"❌ Failed to create {TABLE_NAME} FK {constraint_name}: {error_msg}")
-    print(f"🎯 {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
+    print(f" {TABLE_NAME} Foreign Keys: {created_count} created, {skipped_count} skipped")
     return True
 
 def phase1_create_table_and_data():
@@ -295,7 +295,7 @@ def phase2_create_indexes():
     return create_clientcall_indexes(indexes)
 
 def phase3_create_foreign_keys():
-    print(f"🔗 Phase 3: Creating foreign keys for {TABLE_NAME}")
+    print(f" Phase 3: Creating foreign keys for {TABLE_NAME}")
     mysql_ddl, indexes, foreign_keys = get_clientcall_table_info()
     if mysql_ddl is None:
         return False

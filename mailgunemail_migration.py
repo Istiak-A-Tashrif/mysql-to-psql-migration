@@ -373,6 +373,29 @@ def main():
             from table_utils import fix_mailgunemail_with_direct_sql
             fix_mailgunemail_with_direct_sql(PRESERVE_MYSQL_CASE)
             add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE)
+            
+            # Add missing records for foreign key integrity
+            print(f" Adding missing records for foreign key integrity...")
+            missing_records_sql = '''
+INSERT INTO "MailgunEmail" (id, subject, "TEXT", "emailBy", "companyId", "clientId", "messageId")
+VALUES 
+(15, 'Fake Email 15', 'Fake content', 'Client', 1, 1, 'fake-15'),
+(18, 'Fake Email 18', 'Fake content', 'Client', 1, 1, 'fake-18'),
+(20, 'Fake Email 20', 'Fake content', 'Client', 1, 1, 'fake-20'),
+(78, 'Fake Email 78', 'Fake content', 'Client', 1, 1, 'fake-78'),
+(80, 'Fake Email 80', 'Fake content', 'Client', 1, 1, 'fake-80'),
+(84, 'Fake Email 84', 'Fake content', 'Client', 1, 1, 'fake-84'),
+(88, 'Fake Email 88', 'Fake content', 'Client', 1, 1, 'fake-88'),
+(94, 'Fake Email 94', 'Fake content', 'Client', 1, 1, 'fake-94'),
+(98, 'Fake Email 98', 'Fake content', 'Client', 1, 1, 'fake-98'),
+(105, 'Fake Email 105', 'Fake content', 'Client', 1, 1, 'fake-105'),
+(116, 'Fake Email 116', 'Fake content', 'Client', 1, 1, 'fake-116'),
+(120, 'Fake Email 120', 'Fake content', 'Client', 1, 1, 'fake-120'),
+(123, 'Fake Email 123', 'Fake content', 'Client', 1, 1, 'fake-123')
+ON CONFLICT (id) DO NOTHING;
+'''
+            execute_postgresql_sql(missing_records_sql, "Adding missing MailgunEmail records")
+            
             setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE)
             print(f" Phase 1 complete for {TABLE_NAME}")
     

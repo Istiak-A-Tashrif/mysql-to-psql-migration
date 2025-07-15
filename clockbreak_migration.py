@@ -80,11 +80,44 @@ def extract_clockbreak_indexes_from_ddl(mysql_ddl):
     return indexes
 
 def extract_clockbreak_foreign_keys_from_ddl(mysql_ddl):
-    # Extract foreign key definitions from MySQL DDL
+    # Extract foreign key definitions from MySQL DDL and convert to PostgreSQL ALTER TABLE syntax
     fks = []
     for line in mysql_ddl.splitlines():
         if "FOREIGN KEY" in line:
-            fks.append(line.strip())
+            # Parse MySQL CONSTRAINT line: CONSTRAINT `name` FOREIGN KEY (`col`) REFERENCES `table` (`col`) ...
+            line = line.strip().rstrip(',')
+            
+            # Extract constraint name
+            constraint_match = re.search(r'CONSTRAINT\s+`([^`]+)`', line)
+            constraint_name = constraint_match.group(1) if constraint_match else "fk_constraint"
+            
+            # Extract column name
+            fk_col_match = re.search(r'FOREIGN KEY\s+\(`([^`]+)`\)', line)
+            fk_column = fk_col_match.group(1) if fk_col_match else ""
+            
+            # Extract referenced table and column
+            ref_match = re.search(r'REFERENCES\s+`([^`]+)`\s+\(`([^`]+)`\)', line)
+            if ref_match:
+                ref_table = ref_match.group(1)
+                ref_column = ref_match.group(2)
+                
+                # Extract ON DELETE/UPDATE clauses
+                on_delete = ""
+                on_update = ""
+                if "ON DELETE CASCADE" in line:
+                    on_delete = " ON DELETE CASCADE"
+                elif "ON DELETE SET NULL" in line:
+                    on_delete = " ON DELETE SET NULL"
+                    
+                if "ON UPDATE CASCADE" in line:
+                    on_update = " ON UPDATE CASCADE"
+                elif "ON UPDATE SET NULL" in line:
+                    on_update = " ON UPDATE SET NULL"
+                
+                # Create PostgreSQL ALTER TABLE statement
+                pg_fk = f'ALTER TABLE "ClockBreak" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ("{fk_column}") REFERENCES "{ref_table}" ("{ref_column}"){on_delete}{on_update};'
+                fks.append(pg_fk)
+    
     return fks
 
 def process_clockbreak_column_definition(line, preserve_case):

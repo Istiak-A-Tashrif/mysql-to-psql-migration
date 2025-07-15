@@ -2324,7 +2324,7 @@ def fix_mailgunemail_enum_values(preserve_case=True):
     """
     Fix any empty ENUM values in MailgunEmail after import by updating them to 'Company'.
     """
-    print(f"🔧 Fixing empty ENUM values in MailgunEmail...")
+    print(f" Fixing empty ENUM values in MailgunEmail...")
     
     table_name = "MailgunEmail"
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
@@ -2378,7 +2378,7 @@ def fix_mailgunemail_with_direct_sql(preserve_case=True):
     """
     Fix MailgunEmail import using direct SQL INSERT statements to avoid CSV parsing issues.
     """
-    print(f"🔧 Fixing MailgunEmail with direct SQL approach")
+    print(f" Fixing MailgunEmail with direct SQL approach")
     
     table_name = "MailgunEmail"
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)
@@ -2485,7 +2485,7 @@ def fix_marketingautomationrule_with_json_handling(preserve_case=True):
     """
     Fix MarketingAutomationRule import by properly handling JSON fields and ENUM values.
     """
-    print(f"🔧 Fixing MarketingAutomationRule with JSON handling")
+    print(f" Fixing MarketingAutomationRule with JSON handling")
     
     table_name = "MarketingAutomationRule"
     pg_table_name = get_postgresql_table_name(table_name, preserve_case)

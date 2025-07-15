@@ -102,10 +102,10 @@ def convert_usergroups_mysql_to_postgresql(mysql_ddl, include_constraints=False)
     """Convert _UserGroups MySQL DDL to PostgreSQL format"""
     print(f" Converting {TABLE_NAME} table MySQL DDL to PostgreSQL (constraints: {include_constraints}, preserve_case: {PRESERVE_MYSQL_CASE})...")
     
-    # Handle the _UserGroups specific structure
-    postgresql_ddl = f'''CREATE TABLE {"_UserGroups" if PRESERVE_MYSQL_CASE else "_usergroups"} (
-  {"A" if PRESERVE_MYSQL_CASE else "a"} INTEGER NOT NULL,
-  {"B" if PRESERVE_MYSQL_CASE else "b"} INTEGER NOT NULL
+    # Handle the _UserGroups specific structure with proper quoting
+    postgresql_ddl = f'''CREATE TABLE {"\"_UserGroups\"" if PRESERVE_MYSQL_CASE else "\"_usergroups\""} (
+  {"\"A\"" if PRESERVE_MYSQL_CASE else "\"a\""} INTEGER NOT NULL,
+  {"\"B\"" if PRESERVE_MYSQL_CASE else "\"b\""} INTEGER NOT NULL
 )'''
     
     print(f" Generated PostgreSQL DDL for {TABLE_NAME}:")
@@ -121,7 +121,7 @@ def create_usergroups_table(mysql_ddl):
     return create_postgresql_table(TABLE_NAME, pg_ddl, PRESERVE_MYSQL_CASE)
 
 def create_usergroups_indexes(indexes):
-    """Create indexes for _UserGroups table"""
+    """Create indexes for _UserGroups table using manual commands"""
     if not indexes:
         print(f" No indexes to create for {TABLE_NAME}")
         return True
@@ -129,69 +129,63 @@ def create_usergroups_indexes(indexes):
     print(f" Creating {len(indexes)} indexes for {TABLE_NAME}...")
     success_count = 0
     
-    for index in indexes:
-        index_name = index['name']
-        print(f" Creating {TABLE_NAME} index: {index_name}")
-        
-        # Map the index based on its name
-        if '_AB_unique' in index_name:
-            # Create unique constraint on (A, B)
-            constraint_sql = f'ALTER TABLE {"_UserGroups" if PRESERVE_MYSQL_CASE else "_usergroups"} ADD CONSTRAINT "_UserGroups_AB_unique" UNIQUE ({"A" if PRESERVE_MYSQL_CASE else "a"}, {"B" if PRESERVE_MYSQL_CASE else "b"});'
-        elif '_B_index' in index_name:
-            # Create index on B column
-            constraint_sql = f'CREATE INDEX "_UserGroups_B_index" ON {"_UserGroups" if PRESERVE_MYSQL_CASE else "_usergroups"} ({"B" if PRESERVE_MYSQL_CASE else "b"});'
-        else:
-            print(f" Skipping unknown index: {index_name}")
-            continue
-        
-        success, result = execute_postgresql_sql(constraint_sql, f"{TABLE_NAME} index {index_name}")
-        if success:
-            print(f" Created {TABLE_NAME} index: {index_name}")
-            success_count += 1
-        else:
-            print(f" Failed to create {TABLE_NAME} index: {index_name}")
-            if result:
-                print(f"   Error: {result.stderr}")
+    from table_utils import execute_postgresql_sql
     
-    print(f" {TABLE_NAME} Indexes: {success_count} created, {len(indexes) - success_count} failed")
-    return success_count == len(indexes)
+    # Create the specific indexes manually based on MySQL structure
+    # 1. Unique constraint on (A, B)
+    col_a = "A" if PRESERVE_MYSQL_CASE else "a"
+    col_b = "B" if PRESERVE_MYSQL_CASE else "b"
+    table_ref = '"_UserGroups"' if PRESERVE_MYSQL_CASE else '"_usergroups"'
+    
+    unique_constraint_sql = f'ALTER TABLE {table_ref} ADD CONSTRAINT "_UserGroups_AB_unique" UNIQUE ("{col_a}", "{col_b}");'
+    success, result = execute_postgresql_sql(unique_constraint_sql, f"{TABLE_NAME} unique constraint")
+    if success:
+        print(f" Created {TABLE_NAME} unique constraint: _UserGroups_AB_unique")
+        success_count += 1
+    else:
+        print(f" Failed to create {TABLE_NAME} unique constraint")
+        if result:
+            print(f"   Error: {result.stderr}")
+    
+    # 2. Index on B column
+    index_sql = f'CREATE INDEX "_UserGroups_B_index" ON {table_ref} ("{col_b}");'
+    success, result = execute_postgresql_sql(index_sql, f"{TABLE_NAME} B index")
+    if success:
+        print(f" Created {TABLE_NAME} index: _UserGroups_B_index")
+        success_count += 1
+    else:
+        print(f" Failed to create {TABLE_NAME} B index")
+        if result:
+            print(f"   Error: {result.stderr}")
+    
+    print(f" {TABLE_NAME} Indexes: {success_count} created, {2 - success_count} failed")
+    return success_count == 2
 
 def create_usergroups_foreign_keys(foreign_keys):
-    """Create foreign keys for _UserGroups table"""
-    if not foreign_keys:
-        print(f" No foreign keys to create for {TABLE_NAME}")
-        return True
+    """Create foreign keys for _UserGroups table using manual commands"""
+    print(f" Creating foreign keys for {TABLE_NAME} using manual commands...")
     
-    print(f" Creating {len(foreign_keys)} foreign keys for {TABLE_NAME}...")
+    from table_utils import execute_postgresql_sql
+    
+    # Manual foreign key creation commands
+    foreign_key_commands = [
+        'ALTER TABLE "_UserGroups" ADD CONSTRAINT "_UserGroups_A_fkey" FOREIGN KEY ("A") REFERENCES "Group" ("id") ON DELETE CASCADE ON UPDATE CASCADE;',
+        'ALTER TABLE "_UserGroups" ADD CONSTRAINT "_UserGroups_B_fkey" FOREIGN KEY ("B") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE;'
+    ]
+    
     success_count = 0
-    
-    for fk in foreign_keys:
-        fk_name = fk['name']
-        column = fk['column']
-        ref_table = fk['referenced_table']
-        ref_column = fk['referenced_column']
-        
-        print(f" Creating {TABLE_NAME} FK: {fk_name} -> {ref_table}")
-        
-        # Create the foreign key constraint
-        table_name = f'{"_UserGroups"}' if PRESERVE_MYSQL_CASE else '"_usergroups"'
-        col_name = f'{column}' if PRESERVE_MYSQL_CASE else column.lower()
-        ref_table_name = f'"{ref_table}"' if PRESERVE_MYSQL_CASE else ref_table.lower()
-        ref_col_name = f'{ref_column}' if PRESERVE_MYSQL_CASE else ref_column.lower()
-        
-        fk_sql = f'ALTER TABLE {table_name} ADD CONSTRAINT "{fk_name}" FOREIGN KEY ({col_name}) REFERENCES {ref_table_name} ({ref_col_name}) ON DELETE CASCADE ON UPDATE CASCADE;'
-        
-        success, result = execute_postgresql_sql(fk_sql, f"{TABLE_NAME} FK {fk_name}")
+    for fk_sql in foreign_key_commands:
+        success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
         if success:
-            print(f" Created {TABLE_NAME} FK: {fk_name}")
+            print(f" Created foreign key successfully")
             success_count += 1
         else:
-            print(f" Failed to create {TABLE_NAME} FK: {fk_name}")
+            print(f" Failed to create foreign key: {fk_sql}")
             if result:
                 print(f"   Error: {result.stderr}")
     
-    print(f" {TABLE_NAME} Foreign Keys: {success_count} created, {len(foreign_keys) - success_count} skipped")
-    return success_count > 0  # Allow partial success for FKs
+    print(f" {TABLE_NAME} Foreign Keys: {success_count} created, {len(foreign_key_commands) - success_count} failed")
+    return success_count > 0
 
 def import_usergroups_data_manual():
     """Import _UserGroups data using the proven manual approach"""
@@ -240,7 +234,9 @@ def import_usergroups_data_manual():
             return False
         
         # Step 5: Import data using COPY
-        copy_sql = '''COPY "_UserGroups" (A, B) FROM '/tmp/_UserGroups_data.csv' WITH (FORMAT csv, DELIMITER ',', NULL '');'''
+        # Use the correct column names based on PRESERVE_MYSQL_CASE
+        col_names = f'({"A, B" if PRESERVE_MYSQL_CASE else "a, b"})'
+        copy_sql = f'''COPY "_UserGroups" {col_names} FROM '/tmp/_UserGroups_data.csv' WITH (FORMAT csv, DELIMITER ',', NULL '');'''
         success, output = execute_postgresql_sql(copy_sql, "Import _UserGroups data")
         
         # Cleanup temp file

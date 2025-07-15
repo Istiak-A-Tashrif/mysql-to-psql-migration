@@ -80,11 +80,44 @@ def extract_clockinout_indexes_from_ddl(mysql_ddl):
     return indexes
 
 def extract_clockinout_foreign_keys_from_ddl(mysql_ddl):
-    # Extract foreign key definitions from MySQL DDL
+    # Extract foreign key definitions from MySQL DDL and convert to PostgreSQL ALTER TABLE syntax
     fks = []
     for line in mysql_ddl.splitlines():
         if "FOREIGN KEY" in line:
-            fks.append(line.strip())
+            # Parse MySQL CONSTRAINT line: CONSTRAINT `name` FOREIGN KEY (`col`) REFERENCES `table` (`col`) ...
+            line = line.strip().rstrip(',')
+            
+            # Extract constraint name
+            constraint_match = re.search(r'CONSTRAINT\s+`([^`]+)`', line)
+            constraint_name = constraint_match.group(1) if constraint_match else "fk_constraint"
+            
+            # Extract column name
+            fk_col_match = re.search(r'FOREIGN KEY\s+\(`([^`]+)`\)', line)
+            fk_column = fk_col_match.group(1) if fk_col_match else ""
+            
+            # Extract referenced table and column
+            ref_match = re.search(r'REFERENCES\s+`([^`]+)`\s+\(`([^`]+)`\)', line)
+            if ref_match:
+                ref_table = ref_match.group(1)
+                ref_column = ref_match.group(2)
+                
+                # Extract ON DELETE/UPDATE clauses
+                on_delete = ""
+                on_update = ""
+                if "ON DELETE CASCADE" in line:
+                    on_delete = " ON DELETE CASCADE"
+                elif "ON DELETE SET NULL" in line:
+                    on_delete = " ON DELETE SET NULL"
+                    
+                if "ON UPDATE CASCADE" in line:
+                    on_update = " ON UPDATE CASCADE"
+                elif "ON UPDATE SET NULL" in line:
+                    on_update = " ON UPDATE SET NULL"
+                
+                # Create PostgreSQL ALTER TABLE statement
+                pg_fk = f'ALTER TABLE "ClockInOut" ADD CONSTRAINT "{constraint_name}" FOREIGN KEY ("{fk_column}") REFERENCES "{ref_table}" ("{ref_column}"){on_delete}{on_update};'
+                fks.append(pg_fk)
+    
     return fks
 
 def convert_clockinout_mysql_to_postgresql_ddl(mysql_ddl, include_constraints=False, preserve_case=True):
@@ -148,8 +181,22 @@ def main():
                 execute_postgresql_sql(idx, TABLE_NAME)
         elif phase == 3:
             print(f"\n Phase 3: Creating foreign keys for {TABLE_NAME}...")
-            for fk in foreign_keys:
-                execute_postgresql_sql(fk, TABLE_NAME)
+            # Create the specific foreign keys for ClockInOut table manually
+            from table_utils import execute_postgresql_sql
+            
+            foreign_keys_to_create = [
+                'ALTER TABLE "ClockInOut" ADD CONSTRAINT "ClockInOut_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "Company" ("id") ON DELETE CASCADE;',
+                'ALTER TABLE "ClockInOut" ADD CONSTRAINT "ClockInOut_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User" ("id") ON DELETE CASCADE;'
+            ]
+            
+            for fk_sql in foreign_keys_to_create:
+                success, result = execute_postgresql_sql(fk_sql, f"Foreign key creation for {TABLE_NAME}")
+                if success:
+                    print(f"Created foreign key successfully")
+                else:
+                    print(f"Failed to create foreign key: {fk_sql}")
+                    if result:
+                        print(f"Error: {result.stderr}")
 
     if args.verify:
         print(f"\n Verifying {TABLE_NAME} migration...")

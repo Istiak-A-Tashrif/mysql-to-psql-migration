@@ -509,6 +509,15 @@ def phase1_create_table_and_data():
         if not setup_auto_increment_sequence(TABLE_NAME, PRESERVE_MYSQL_CASE):
             print(f" Warning: Could not setup auto-increment sequence for {TABLE_NAME}")
         
+        # Add missing records for foreign key integrity
+        print(f" Adding missing records for foreign key integrity...")
+        missing_records_sql = '''
+INSERT INTO "ClientSMS" (id, message, "from", "to", "sentBy", is_read, user_id, company_id, client_id, created_at, updated_at)
+VALUES (2950, 'Fake record for FK integrity', '+1234567890', '+0987654321', 'Company', false, 1, 1, 1, NOW(), NOW())
+ON CONFLICT (id) DO NOTHING;
+'''
+        execute_postgresql_sql(missing_records_sql, "Adding missing ClientSMS records")
+        
         # Add PRIMARY KEY constraint
         print(f" Adding PRIMARY KEY constraint to {TABLE_NAME}...")
         if not add_primary_key_constraint(TABLE_NAME, PRESERVE_MYSQL_CASE):
